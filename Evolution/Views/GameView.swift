@@ -40,7 +40,7 @@ struct GameView: View {
                                 .frame(width: showStats ? geometry.size.width * 0.6 : geometry.size.width)
 
                             if showStats {
-                                StatisticsPanel(statistics: viewModel.statistics)
+                                StatisticsPanel(viewModel: viewModel)
                                     .frame(width: geometry.size.width * 0.4)
                                     .background(Color(white: 0.1))
                                     .transition(.move(edge: .trailing))
@@ -54,7 +54,7 @@ struct GameView: View {
                                 .frame(height: showStats ? geometry.size.height * 0.5 : geometry.size.height)
 
                             if showStats {
-                                StatisticsPanel(statistics: viewModel.statistics)
+                                StatisticsPanel(viewModel: viewModel)
                                     .frame(height: geometry.size.height * 0.5)
                                     .background(Color(white: 0.1))
                                     .transition(.move(edge: .bottom))
@@ -64,25 +64,18 @@ struct GameView: View {
 
                     // Overlay controls on top with explicit safe area padding
                     VStack(spacing: 0) {
-                        // Debug info
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Outer Safe Top: \(outerGeometry.safeAreaInsets.top)")
-                                .font(.caption)
-                                .foregroundColor(.yellow)
-                            Text("Inner Safe Top: \(geometry.safeAreaInsets.top)")
-                                .font(.caption)
-                                .foregroundColor(.yellow)
-                        }
-                        .padding(4)
-                        .background(Color.red.opacity(0.8))
+                        // Spacer to keep controls visible below notch/safe area
+                        Rectangle()
+                            .fill(Color.black.opacity(0.3))
+                            .frame(height: max(60, outerGeometry.safeAreaInsets.top + 16))
 
                         HStack {
                             GameControls(
-                                isSuperSpeed: $viewModel.isSuperSpeed,
+                                viewModel: viewModel,
                                 showStats: $showStats
                             )
                             .padding(.horizontal)
-                            .padding(.bottom, 8)
+                            .padding(.vertical, 8)
                             .background(
                                 LinearGradient(
                                     gradient: Gradient(colors: [Color.black.opacity(0.6), Color.clear]),
@@ -93,7 +86,6 @@ struct GameView: View {
 
                             Spacer()
                         }
-                        .padding(.top, outerGeometry.safeAreaInsets.top)
 
                         Spacer()
                     }
@@ -123,7 +115,7 @@ struct GameView: View {
 }
 
 struct GameControls: View {
-    @Binding var isSuperSpeed: Bool
+    @ObservedObject var viewModel: GameViewModel
     @Binding var showStats: Bool
 
     var body: some View {
@@ -131,17 +123,17 @@ struct GameControls: View {
             HStack(spacing: 12) {
                 // Super speed toggle
                 Button(action: {
-                    isSuperSpeed.toggle()
+                    viewModel.isSuperSpeed.toggle()
                 }) {
                     HStack(spacing: 6) {
-                        Image(systemName: isSuperSpeed ? "hare.fill" : "tortoise.fill")
-                        Text(isSuperSpeed ? "2x" : "1x")
+                        Image(systemName: viewModel.isSuperSpeed ? "hare.fill" : "tortoise.fill")
+                        Text(viewModel.isSuperSpeed ? "2x" : "1x")
                             .fontWeight(.bold)
                     }
                     .font(.system(size: 16))
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
-                    .background(isSuperSpeed ? Color.orange : Color.blue)
+                    .background(viewModel.isSuperSpeed ? Color.orange : Color.blue)
                     .foregroundColor(.white)
                     .cornerRadius(8)
                 }

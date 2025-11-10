@@ -214,8 +214,9 @@ class GameScene: SKScene {
                         )
 
                         let child = organism.reproduce(at: clampedPosition)
-                        addOrganism(child, animated: true)
-                        showReproductionAnimation(from: organism.position, to: child.position)
+
+                        // Show dramatic reproduction with buildup -> POP -> split
+                        showDramaticReproduction(parent: organism, child: child, childPosition: clampedPosition)
 
                         // Track birth in statistics
                         statistics.births += 1
@@ -487,6 +488,238 @@ class GameScene: SKScene {
 
         // Add expanding circle effect
         addDayTransitionRing(at: CGPoint(x: size.width / 2, y: size.height / 2))
+    }
+
+    private func showDramaticReproduction(parent: Organism, child: Organism, childPosition: CGPoint) {
+        guard let parentNode = organismNodes[parent.id] else { return }
+
+        let parentPosition = parent.position
+
+        // PHASE 1: Gradual buildup (0.6s) - parent grows and glows
+        let buildupDuration = 0.6
+
+        // Growing glow effect around parent
+        for i in 0..<5 {
+            let delay = Double(i) * 0.12
+            let glowRing = SKShapeNode(circleOfRadius: CGFloat(configuration.organismRadius))
+            glowRing.strokeColor = .cyan
+            glowRing.lineWidth = 2
+            glowRing.fillColor = .clear
+            glowRing.position = parentPosition
+            glowRing.alpha = 0
+            glowRing.zPosition = 4
+            glowRing.glowWidth = 15
+
+            addChild(glowRing)
+
+            let wait = SKAction.wait(forDuration: delay)
+            let fadeIn = SKAction.fadeAlpha(to: 0.8, duration: 0.1)
+            let scaleUp = SKAction.scale(to: 1.8, duration: 0.5)
+            scaleUp.timingMode = .easeOut
+            let fadeOut = SKAction.fadeOut(withDuration: 0.3)
+            let group = SKAction.group([scaleUp, fadeOut])
+            let remove = SKAction.removeFromParent()
+
+            glowRing.run(SKAction.sequence([wait, fadeIn, group, remove]))
+        }
+
+        // Parent node grows and pulses
+        let parentGrow = SKAction.scale(to: 1.5, duration: buildupDuration)
+        parentGrow.timingMode = .easeInEaseOut
+
+        // Pulsing brightness effect
+        let brighten = SKAction.colorize(with: .white, colorBlendFactor: 0.4, duration: buildupDuration)
+        brighten.timingMode = .easeIn
+
+        let buildupGroup = SKAction.group([parentGrow, brighten])
+
+        // PHASE 2: POP! (0.2s) - dramatic burst
+        let popDelay = SKAction.wait(forDuration: buildupDuration)
+
+        // Create massive explosion of particles
+        let popAction = SKAction.run { [weak self] in
+            guard let self = self else { return }
+
+            // Flash effect
+            let flash = SKShapeNode(circleOfRadius: CGFloat(self.configuration.organismRadius) * 3)
+            flash.fillColor = .white
+            flash.strokeColor = .clear
+            flash.position = parentPosition
+            flash.alpha = 0
+            flash.zPosition = 20
+            flash.setScale(0.5)
+
+            self.addChild(flash)
+
+            let flashIn = SKAction.fadeAlpha(to: 1.0, duration: 0.05)
+            let flashScale = SKAction.scale(to: 2.0, duration: 0.15)
+            let flashOut = SKAction.fadeOut(withDuration: 0.1)
+            let flashGroup = SKAction.group([flashScale, SKAction.sequence([flashIn, flashOut])])
+            flash.run(SKAction.sequence([flashGroup, SKAction.removeFromParent()]))
+
+            // Explosion particles
+            for _ in 0..<30 {
+                let particle = SKShapeNode(circleOfRadius: CGFloat.random(in: 2...5))
+                particle.fillColor = SKColor(
+                    red: CGFloat.random(in: 0.5...1.0),
+                    green: CGFloat.random(in: 0.8...1.0),
+                    blue: 1.0,
+                    alpha: 1.0
+                )
+                particle.strokeColor = .white
+                particle.lineWidth = 1
+                particle.position = parentPosition
+                particle.zPosition = 15
+                particle.glowWidth = 5
+
+                self.addChild(particle)
+
+                let angle = CGFloat.random(in: 0...(2 * .pi))
+                let distance = CGFloat.random(in: 50...100)
+                let endX = parentPosition.x + cos(angle) * distance
+                let endY = parentPosition.y + sin(angle) * distance
+
+                let move = SKAction.move(to: CGPoint(x: endX, y: endY), duration: 0.5)
+                move.timingMode = .easeOut
+                let fadeOut = SKAction.fadeOut(withDuration: 0.5)
+                let spin = SKAction.rotate(byAngle: .pi * CGFloat.random(in: 2...6), duration: 0.5)
+                let shrink = SKAction.scale(to: 0.1, duration: 0.5)
+                let group = SKAction.group([move, fadeOut, spin, shrink])
+
+                particle.run(SKAction.sequence([group, SKAction.removeFromParent()]))
+            }
+
+            // Multiple expanding shockwave rings
+            for i in 0..<4 {
+                let delay = Double(i) * 0.05
+                let shockwave = SKShapeNode(circleOfRadius: CGFloat(self.configuration.organismRadius))
+                shockwave.strokeColor = .cyan
+                shockwave.lineWidth = 4
+                shockwave.fillColor = .clear
+                shockwave.position = parentPosition
+                shockwave.alpha = 0
+                shockwave.zPosition = 18
+                shockwave.glowWidth = 20
+
+                self.addChild(shockwave)
+
+                let wait = SKAction.wait(forDuration: delay)
+                let fadeIn = SKAction.fadeAlpha(to: 1.0, duration: 0.05)
+                let expand = SKAction.scale(to: 5.0, duration: 0.4)
+                expand.timingMode = .easeOut
+                let fadeOut = SKAction.fadeOut(withDuration: 0.4)
+                let group = SKAction.group([expand, fadeOut])
+
+                shockwave.run(SKAction.sequence([wait, fadeIn, group, SKAction.removeFromParent()]))
+            }
+        }
+
+        // PHASE 3: Split (0.4s) - organisms fly apart
+        let splitDelay = SKAction.wait(forDuration: 0.15)
+        let splitAction = SKAction.run { [weak self] in
+            guard let self = self else { return }
+
+            // Add child organism now
+            self.addOrganism(child, animated: false)
+
+            guard let childNode = self.organismNodes[child.id] else { return }
+
+            // Calculate direction vector from parent to child
+            let dx = childPosition.x - parentPosition.x
+            let dy = childPosition.y - parentPosition.y
+            let distance = sqrt(dx * dx + dy * dy)
+            let normalizedDx = dx / distance
+            let normalizedDy = dy / distance
+
+            // Start both at parent position
+            childNode.position = parentPosition
+            childNode.setScale(0.3)
+            childNode.alpha = 0
+
+            // Push parent backward
+            let parentPushDistance: CGFloat = 20
+            let parentPushX = parentPosition.x - normalizedDx * parentPushDistance
+            let parentPushY = parentPosition.y - normalizedDy * parentPushDistance
+            let parentPush = SKAction.move(to: CGPoint(x: parentPushX, y: parentPushY), duration: 0.2)
+            parentPush.timingMode = .easeOut
+            let parentReturn = SKAction.move(to: parentPosition, duration: 0.3)
+            parentReturn.timingMode = .easeInEaseOut
+
+            // Parent returns to normal size
+            let parentShrink = SKAction.scale(to: 1.0, duration: 0.3)
+            parentShrink.timingMode = .easeOut
+            let parentUncolorize = SKAction.colorize(withColorBlendFactor: 0, duration: 0.3)
+
+            let parentSequence = SKAction.sequence([
+                parentPush,
+                SKAction.group([parentReturn, parentShrink, parentUncolorize])
+            ])
+
+            parentNode.run(parentSequence)
+
+            // Child flies to position
+            let childFadeIn = SKAction.fadeIn(withDuration: 0.1)
+            let childGrowInitial = SKAction.scale(to: 0.8, duration: 0.2)
+            childGrowInitial.timingMode = .easeOut
+            let childMove = SKAction.move(to: childPosition, duration: 0.3)
+            childMove.timingMode = .easeOut
+
+            // Child bounces into final position
+            let childBounceGrow = SKAction.scale(to: 1.3, duration: 0.15)
+            let childBounceShrink = SKAction.scale(to: 1.0, duration: 0.2)
+            childBounceShrink.timingMode = .easeInEaseOut
+
+            // Spinning during flight
+            let childSpin = SKAction.rotate(byAngle: .pi * 2, duration: 0.5)
+
+            let childSequence = SKAction.sequence([
+                SKAction.group([childFadeIn, childGrowInitial]),
+                SKAction.group([childMove, childSpin]),
+                SKAction.sequence([childBounceGrow, childBounceShrink])
+            ])
+
+            childNode.run(childSequence)
+
+            // Trail particles between parent and child
+            for i in 0..<15 {
+                let delay = Double(i) * 0.03
+                let trailParticle = SKShapeNode(circleOfRadius: 3)
+                trailParticle.fillColor = .cyan
+                trailParticle.strokeColor = .white
+                trailParticle.lineWidth = 1
+                trailParticle.position = parentPosition
+                trailParticle.alpha = 0
+                trailParticle.zPosition = 10
+                trailParticle.glowWidth = 5
+
+                self.addChild(trailParticle)
+
+                let wait = SKAction.wait(forDuration: delay)
+                let fadeIn = SKAction.fadeAlpha(to: 0.8, duration: 0.1)
+                let moveToChild = SKAction.move(to: childPosition, duration: 0.3)
+                moveToChild.timingMode = .easeOut
+                let fadeOut = SKAction.fadeOut(withDuration: 0.2)
+                let shrink = SKAction.scale(to: 0.1, duration: 0.5)
+
+                trailParticle.run(SKAction.sequence([
+                    wait,
+                    fadeIn,
+                    SKAction.group([moveToChild, fadeOut, shrink]),
+                    SKAction.removeFromParent()
+                ]))
+            }
+        }
+
+        // Combine all phases
+        let fullSequence = SKAction.sequence([
+            buildupGroup,
+            popDelay,
+            popAction,
+            splitDelay,
+            splitAction
+        ])
+
+        parentNode.run(fullSequence)
     }
 
     private func showReproductionAnimation(from parentPosition: CGPoint, to childPosition: CGPoint) {

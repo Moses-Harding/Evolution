@@ -9,13 +9,13 @@ import SwiftUI
 import Charts
 
 struct StatisticsPanel: View {
-    let statistics: GameStatistics
+    @ObservedObject var viewModel: GameViewModel
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 // Live Metrics - larger and more prominent
-                LiveMetricsView(statistics: statistics)
+                LiveMetricsView(statistics: viewModel.statistics)
 
                 Divider()
                     .background(Color.white.opacity(0.3))
@@ -23,12 +23,12 @@ struct StatisticsPanel: View {
                 // Charts in tabs for better space usage
                 TabView {
                     VStack {
-                        PopulationChartView(snapshots: statistics.dailySnapshots)
-                        SpeedChartView(snapshots: statistics.dailySnapshots)
+                        PopulationChartView(snapshots: viewModel.statistics.dailySnapshots)
+                        SpeedChartView(snapshots: viewModel.statistics.dailySnapshots)
                     }
                     .tag(0)
 
-                    SpeedDistributionView(organisms: statistics.organisms)
+                    SpeedDistributionView(organisms: viewModel.statistics.organisms)
                         .tag(1)
                 }
                 .tabViewStyle(.page(indexDisplayMode: .always))
@@ -38,7 +38,7 @@ struct StatisticsPanel: View {
                     .background(Color.white.opacity(0.3))
 
                 // Organism List
-                OrganismListView(organisms: statistics.organisms)
+                OrganismListView(organisms: viewModel.statistics.organisms)
             }
             .padding()
         }
