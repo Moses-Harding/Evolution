@@ -11,8 +11,8 @@ import Combine
 class GameScene: SKScene {
 
     // MARK: - Constants
-    private let dayCycleDuration: TimeInterval = 60.0
-    private let movementPhaseDuration: TimeInterval = 50.0
+    private let dayCycleDuration: TimeInterval = 30.0  // Reduced from 60s
+    private let movementPhaseDuration: TimeInterval = 25.0  // Reduced from 50s
     private let reproductionProbability: Double = 0.7
     private let spawnDistance: CGFloat = 30.0
     private let organismRadius: CGFloat = 10.0
@@ -27,6 +27,9 @@ class GameScene: SKScene {
     private var currentDay: Int = 0
     private var dayTimer: TimeInterval = 0.0
     private var isMovementPhase: Bool = true
+
+    // Speed control
+    var timeScale: Double = 1.0  // Can be set to 2.0 for super speed
 
     // MARK: - Statistics
     var statistics: GameStatistics = GameStatistics()
@@ -70,7 +73,7 @@ class GameScene: SKScene {
 
     // MARK: - Update Loop
     override func update(_ currentTime: TimeInterval) {
-        let deltaTime = 1.0 / 60.0  // Assuming 60 FPS
+        let deltaTime = (1.0 / 60.0) * timeScale  // Apply time scale
 
         dayTimer += deltaTime
 
@@ -81,6 +84,7 @@ class GameScene: SKScene {
             currentDay += 1
             isMovementPhase = true
             statistics.currentDay = currentDay
+            showDayTransition()
         } else if dayTimer >= movementPhaseDuration && isMovementPhase {
             // End movement phase
             isMovementPhase = false
@@ -89,7 +93,17 @@ class GameScene: SKScene {
         if isMovementPhase {
             updateOrganisms(deltaTime: deltaTime)
             checkCollisions()
+
+            // Auto-advance if all food is eaten
+            if allFoodClaimed() {
+                dayTimer = movementPhaseDuration
+                isMovementPhase = false
+            }
         }
+    }
+
+    private func allFoodClaimed() -> Bool {
+        return food.allSatisfy { $0.isClaimed }
     }
 
     private func updateOrganisms(deltaTime: TimeInterval) {
@@ -174,7 +188,7 @@ class GameScene: SKScene {
         organisms = survivors
 
         // Handle reproduction
-        var newborns: [Organism] = []
+        var newborns: [(organism: Organism, parentPosition: CGPoint)] = []
         for organism in organisms {
             if organism.hasFoodToday && Double.random(in: 0...1) < reproductionProbability {
                 let angle = Double.random(in: 0...(2 * .pi))
@@ -192,7 +206,7 @@ class GameScene: SKScene {
                 )
 
                 let child = organism.reproduce(at: clampedPosition)
-                newborns.append(child)
+                newborns.append((child, organism.position))
                 births += 1
             }
 
@@ -207,9 +221,10 @@ class GameScene: SKScene {
             }
         }
 
-        // Add newborns
-        for newborn in newborns {
+        // Add newborns with reproduction animation
+        for (newborn, parentPosition) in newborns {
             addOrganism(newborn, animated: true)
+            showReproductionAnimation(from: parentPosition, to: newborn.position)
         }
 
         // Update statistics
@@ -307,6 +322,70 @@ class GameScene: SKScene {
 
         // Publish update
         statisticsPublisher.send(statistics)
+    }
+
+    // MARK: - Animations
+    private func showDayTransition() {
+        // Create day transition label
+        let label = SKLabelNode(text: "Day \(currentDay)")
+        label.fontName = "Helvetica-Bold"
+        label.fontSize = 48
+        label.fontColor = .white
+        label.position = CGPoint(x: size.width / 2, y: size.height / 2)
+        label.zPosition = 1000
+        label.alpha = 0
+
+        addChild(label)
+
+        // Animate
+        let fadeIn = SKAction.fadeIn(withDuration: 0.3)
+        let wait = SKAction.wait(forDuration: 0.5)
+        let fadeOut = SKAction.fadeOut(withDuration: 0.3)
+        let remove = SKAction.removeFromParent()
+        let sequence = SKAction.sequence([fadeIn, wait, fadeOut, remove])
+
+        label.run(sequence)
+    }
+
+    private func showReproductionAnimation(from parentPosition: CGPoint, to childPosition: CGPoint) {
+        // Create a line from parent to child
+        let path = CGMutablePath()
+        path.move(to: parentPosition)
+        path.addLine(to: childPosition)
+
+        let line = SKShapeNode(path: path)
+        line.strokeColor = .cyan
+        line.lineWidth = 2
+        line.alpha = 0
+        line.zPosition = 5
+
+        addChild(line)
+
+        // Pulse animation
+        let fadeIn = SKAction.fadeAlpha(to: 0.8, duration: 0.2)
+        let fadeOut = SKAction.fadeOut(withDuration: 0.3)
+        let remove = SKAction.removeFromParent()
+        let sequence = SKAction.sequence([fadeIn, fadeOut, remove])
+
+        line.run(sequence)
+
+        // Add pulse at parent
+        let pulse = SKShapeNode(circleOfRadius: organismRadius * 1.5)
+        pulse.strokeColor = .cyan
+        pulse.lineWidth = 2
+        pulse.fillColor = .clear
+        pulse.position = parentPosition
+        pulse.alpha = 0.8
+        pulse.zPosition = 5
+
+        addChild(pulse)
+
+        let scaleUp = SKAction.scale(to: 2.0, duration: 0.3)
+        let pulseOut = SKAction.fadeOut(withDuration: 0.3)
+        let group = SKAction.group([scaleUp, pulseOut])
+        let removeParent = SKAction.removeFromParent()
+
+        pulse.run(SKAction.sequence([group, removeParent]))
     }
 }
 
