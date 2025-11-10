@@ -15,56 +15,78 @@ struct GameView: View {
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
-        ZStack {
+        // Capture safe area insets BEFORE ignoring them
+        GeometryReader { outerGeometry in
             GeometryReader { geometry in
-                if geometry.size.width > geometry.size.height {
-                    // Landscape - side by side
-                    HStack(spacing: 0) {
-                        ZStack(alignment: .topLeading) {
+                ZStack {
+                    if geometry.size.width > geometry.size.height {
+                        // Landscape - side by side
+                        HStack(spacing: 0) {
                             SpriteView(scene: viewModel.scene)
                                 .ignoresSafeArea()
+                                .frame(width: showStats ? geometry.size.width * 0.6 : geometry.size.width)
 
-                            GameControls(
-                                isSuperSpeed: $viewModel.isSuperSpeed,
-                                showStats: $showStats
-                            )
-                            .padding()
-                            .padding(.top, geometry.safeAreaInsets.top)
+                            if showStats {
+                                StatisticsPanel(statistics: viewModel.statistics)
+                                    .frame(width: geometry.size.width * 0.4)
+                                    .background(Color(white: 0.1))
+                                    .transition(.move(edge: .trailing))
+                            }
                         }
-                        .frame(width: showStats ? geometry.size.width * 0.6 : geometry.size.width)
+                    } else {
+                        // Portrait - stacked
+                        VStack(spacing: 0) {
+                            SpriteView(scene: viewModel.scene)
+                                .ignoresSafeArea()
+                                .frame(height: showStats ? geometry.size.height * 0.5 : geometry.size.height)
 
-                        if showStats {
-                            StatisticsPanel(statistics: viewModel.statistics)
-                                .frame(width: geometry.size.width * 0.4)
-                                .background(Color(white: 0.1))
-                                .transition(.move(edge: .trailing))
+                            if showStats {
+                                StatisticsPanel(statistics: viewModel.statistics)
+                                    .frame(height: geometry.size.height * 0.5)
+                                    .background(Color(white: 0.1))
+                                    .transition(.move(edge: .bottom))
+                            }
                         }
                     }
-                } else {
-                    // Portrait - stacked
-                    VStack(spacing: 0) {
-                        ZStack(alignment: .topLeading) {
-                            SpriteView(scene: viewModel.scene)
-                                .ignoresSafeArea()
 
+                    // Overlay controls on top with explicit safe area padding
+                    VStack(spacing: 0) {
+                        // Debug info
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Outer Safe Top: \(outerGeometry.safeAreaInsets.top)")
+                                .font(.caption)
+                                .foregroundColor(.yellow)
+                            Text("Inner Safe Top: \(geometry.safeAreaInsets.top)")
+                                .font(.caption)
+                                .foregroundColor(.yellow)
+                        }
+                        .padding(4)
+                        .background(Color.red.opacity(0.8))
+
+                        HStack {
                             GameControls(
                                 isSuperSpeed: $viewModel.isSuperSpeed,
                                 showStats: $showStats
                             )
-                            .padding()
-                            .padding(.top, geometry.safeAreaInsets.top)
-                        }
-                        .frame(height: showStats ? geometry.size.height * 0.5 : geometry.size.height)
+                            .padding(.horizontal)
+                            .padding(.bottom, 8)
+                            .background(
+                                LinearGradient(
+                                    gradient: Gradient(colors: [Color.black.opacity(0.6), Color.clear]),
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
+                            )
 
-                        if showStats {
-                            StatisticsPanel(statistics: viewModel.statistics)
-                                .frame(height: geometry.size.height * 0.5)
-                                .background(Color(white: 0.1))
-                                .transition(.move(edge: .bottom))
+                            Spacer()
                         }
+                        .padding(.top, outerGeometry.safeAreaInsets.top)
+
+                        Spacer()
                     }
                 }
             }
+            .ignoresSafeArea()
         }
         .animation(.easeInOut(duration: 0.3), value: showStats)
         .onChange(of: scenePhase) { oldPhase, newPhase in
