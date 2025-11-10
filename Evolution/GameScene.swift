@@ -185,13 +185,36 @@ class GameScene: SKScene {
 
                     // Add celebration particles and effects
                     addFeedingCelebration(at: organism.position, color: organism.color)
+
+                    // Immediate reproduction attempt
+                    if Double.random(in: 0...1) < reproductionProbability {
+                        let angle = Double.random(in: 0...(2 * .pi))
+                        let offsetX = cos(angle) * spawnDistance
+                        let offsetY = sin(angle) * spawnDistance
+                        let childPosition = CGPoint(
+                            x: organism.position.x + CGFloat(offsetX),
+                            y: organism.position.y + CGFloat(offsetY)
+                        )
+
+                        // Clamp to scene bounds
+                        let clampedPosition = CGPoint(
+                            x: max(20, min(size.width - 20, childPosition.x)),
+                            y: max(20, min(size.height - 20, childPosition.y))
+                        )
+
+                        let child = organism.reproduce(at: clampedPosition)
+                        addOrganism(child, animated: true)
+                        showReproductionAnimation(from: organism.position, to: child.position)
+
+                        // Track birth in statistics
+                        statistics.births += 1
+                    }
                 }
             }
         }
     }
 
     private func endDay() {
-        var births = 0
         var deaths = 0
 
         // Handle deaths (organisms that didn't eat)
@@ -207,30 +230,8 @@ class GameScene: SKScene {
 
         organisms = survivors
 
-        // Handle reproduction
-        var newborns: [(organism: Organism, parentPosition: CGPoint)] = []
+        // Reset all organisms for next day
         for organism in organisms {
-            if organism.hasFoodToday && Double.random(in: 0...1) < reproductionProbability {
-                let angle = Double.random(in: 0...(2 * .pi))
-                let offsetX = cos(angle) * spawnDistance
-                let offsetY = sin(angle) * spawnDistance
-                let childPosition = CGPoint(
-                    x: organism.position.x + CGFloat(offsetX),
-                    y: organism.position.y + CGFloat(offsetY)
-                )
-
-                // Clamp to scene bounds
-                let clampedPosition = CGPoint(
-                    x: max(20, min(size.width - 20, childPosition.x)),
-                    y: max(20, min(size.height - 20, childPosition.y))
-                )
-
-                let child = organism.reproduce(at: clampedPosition)
-                newborns.append((child, organism.position))
-                births += 1
-            }
-
-            // Reset for next day
             organism.hasFoodToday = false
             organism.targetFood = nil
 
@@ -241,16 +242,12 @@ class GameScene: SKScene {
             }
         }
 
-        // Add newborns with reproduction animation
-        for (newborn, parentPosition) in newborns {
-            addOrganism(newborn, animated: true)
-            showReproductionAnimation(from: parentPosition, to: newborn.position)
-        }
-
         // Update statistics
-        statistics.births = births
         statistics.deaths = deaths
         updateStatistics()
+
+        // Reset births counter for next day
+        statistics.births = 0
 
         // Spawn new food for next day
         spawnFood()
