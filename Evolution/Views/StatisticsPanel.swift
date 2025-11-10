@@ -13,27 +13,26 @@ struct StatisticsPanel: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                // Live Metrics
+            VStack(alignment: .leading, spacing: 16) {
+                // Live Metrics - larger and more prominent
                 LiveMetricsView(statistics: statistics)
 
                 Divider()
                     .background(Color.white.opacity(0.3))
 
-                // Population Chart
-                PopulationChartView(snapshots: statistics.dailySnapshots)
+                // Charts in tabs for better space usage
+                TabView {
+                    VStack {
+                        PopulationChartView(snapshots: statistics.dailySnapshots)
+                        SpeedChartView(snapshots: statistics.dailySnapshots)
+                    }
+                    .tag(0)
 
-                Divider()
-                    .background(Color.white.opacity(0.3))
-
-                // Speed Chart
-                SpeedChartView(snapshots: statistics.dailySnapshots)
-
-                Divider()
-                    .background(Color.white.opacity(0.3))
-
-                // Speed Distribution
-                SpeedDistributionView(organisms: statistics.organisms)
+                    SpeedDistributionView(organisms: statistics.organisms)
+                        .tag(1)
+                }
+                .tabViewStyle(.page(indexDisplayMode: .always))
+                .frame(height: 400)
 
                 Divider()
                     .background(Color.white.opacity(0.3))
@@ -50,22 +49,23 @@ struct LiveMetricsView: View {
     let statistics: GameStatistics
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Live Metrics")
-                .font(.headline)
-                .foregroundColor(.white)
+        VStack(alignment: .leading, spacing: 12) {
+            Text("EVOLUTION METRICS")
+                .font(.title2)
+                .fontWeight(.bold)
+                .foregroundColor(.cyan)
 
-            HStack {
+            HStack(spacing: 12) {
                 MetricCard(title: "Day", value: "\(statistics.currentDay)")
                 MetricCard(title: "Population", value: "\(statistics.population)")
             }
 
-            HStack {
+            HStack(spacing: 12) {
                 MetricCard(title: "Avg Speed", value: String(format: "%.1f", statistics.averageSpeed))
-                MetricCard(title: "Min/Max", value: "\(statistics.minSpeed)/\(statistics.maxSpeed)")
+                MetricCard(title: "Range", value: "\(statistics.minSpeed)-\(statistics.maxSpeed)")
             }
 
-            HStack {
+            HStack(spacing: 12) {
                 MetricCard(title: "Births", value: "\(statistics.births)", color: .green)
                 MetricCard(title: "Deaths", value: "\(statistics.deaths)", color: .red)
             }
@@ -79,19 +79,20 @@ struct MetricCard: View {
     var color: Color = .blue
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 6) {
             Text(title)
                 .font(.caption)
+                .fontWeight(.semibold)
                 .foregroundColor(.gray)
             Text(value)
-                .font(.title3)
+                .font(.title2)
                 .fontWeight(.bold)
                 .foregroundColor(color)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(8)
-        .background(Color.black.opacity(0.3))
-        .cornerRadius(8)
+        .padding(12)
+        .background(Color.black.opacity(0.5))
+        .cornerRadius(10)
     }
 }
 
@@ -101,7 +102,8 @@ struct PopulationChartView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Population Over Time")
-                .font(.headline)
+                .font(.title3)
+                .fontWeight(.semibold)
                 .foregroundColor(.white)
 
             if snapshots.count > 1 {
@@ -111,8 +113,9 @@ struct PopulationChartView: View {
                         y: .value("Population", snapshot.population)
                     )
                     .foregroundStyle(.green)
+                    .lineStyle(StrokeStyle(lineWidth: 3))
                 }
-                .frame(height: 150)
+                .frame(height: 140)
                 .chartXAxis {
                     AxisMarks(position: .bottom) {
                         AxisValueLabel()
@@ -128,7 +131,7 @@ struct PopulationChartView: View {
             } else {
                 Text("Collecting data...")
                     .foregroundColor(.gray)
-                    .frame(height: 150)
+                    .frame(height: 140)
             }
         }
     }
@@ -140,7 +143,8 @@ struct SpeedChartView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Average Speed Over Time")
-                .font(.headline)
+                .font(.title3)
+                .fontWeight(.semibold)
                 .foregroundColor(.white)
 
             if snapshots.count > 1 {
@@ -149,9 +153,10 @@ struct SpeedChartView: View {
                         x: .value("Day", snapshot.day),
                         y: .value("Speed", snapshot.averageSpeed)
                     )
-                    .foregroundStyle(.blue)
+                    .foregroundStyle(.orange)
+                    .lineStyle(StrokeStyle(lineWidth: 3))
                 }
-                .frame(height: 150)
+                .frame(height: 140)
                 .chartXAxis {
                     AxisMarks(position: .bottom) {
                         AxisValueLabel()
@@ -167,7 +172,7 @@ struct SpeedChartView: View {
             } else {
                 Text("Collecting data...")
                     .foregroundColor(.gray)
-                    .frame(height: 150)
+                    .frame(height: 140)
             }
         }
     }
@@ -187,9 +192,10 @@ struct SpeedDistributionView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 12) {
             Text("Speed Distribution")
-                .font(.headline)
+                .font(.title2)
+                .fontWeight(.semibold)
                 .foregroundColor(.white)
 
             if !organisms.isEmpty {
@@ -200,7 +206,7 @@ struct SpeedDistributionView: View {
                     )
                     .foregroundStyle(.purple)
                 }
-                .frame(height: 150)
+                .frame(height: 300)
                 .chartXAxis {
                     AxisMarks(position: .bottom) {
                         AxisValueLabel()
@@ -216,9 +222,10 @@ struct SpeedDistributionView: View {
             } else {
                 Text("No organisms")
                     .foregroundColor(.gray)
-                    .frame(height: 150)
+                    .frame(height: 300)
             }
         }
+        .padding()
     }
 }
 
