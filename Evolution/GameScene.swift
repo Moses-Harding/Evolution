@@ -18,6 +18,7 @@ class GameScene: SKScene {
     private var food: [Food] = []
     private var organismNodes: [UUID: SKShapeNode] = [:]
     private var foodNodes: [UUID: SKShapeNode] = [:]
+    private var corpsePositions: [CGPoint] = []  // Store positions of dead organisms
 
     private var currentDay: Int = 0
     private var dayTimer: TimeInterval = 0.0
@@ -78,7 +79,14 @@ class GameScene: SKScene {
         food.removeAll()
         foodNodes.removeAll()
 
-        // Spawn food items based on configuration
+        // First, spawn food at corpse positions (corpses from previous day)
+        for corpsePosition in corpsePositions {
+            let foodItem = Food(position: corpsePosition)
+            addFood(foodItem)
+        }
+        corpsePositions.removeAll()  // Clear corpse positions after spawning
+
+        // Then spawn regular food items based on configuration
         for _ in 0..<configuration.foodPerDay {
             let randomX = CGFloat.random(in: 20...(size.width - 20))
             let randomY = CGFloat.random(in: 20...(size.height - 20))
@@ -228,6 +236,7 @@ class GameScene: SKScene {
 
     private func endDay() {
         var deaths = 0
+        corpsePositions.removeAll()  // Clear previous corpse positions
 
         // Handle deaths (organisms that didn't eat)
         let survivors = organisms.filter { organism in
@@ -235,6 +244,7 @@ class GameScene: SKScene {
                 return true
             } else {
                 deaths += 1
+                corpsePositions.append(organism.position)  // Store corpse position
                 removeOrganism(organism, animated: true)
                 return false
             }
