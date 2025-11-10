@@ -12,6 +12,7 @@ import Combine
 struct GameView: View {
     @StateObject private var viewModel = GameViewModel()
     @State private var showStats = true
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         ZStack {
@@ -28,6 +29,7 @@ struct GameView: View {
                                 showStats: $showStats
                             )
                             .padding()
+                            .padding(.top, geometry.safeAreaInsets.top)
                         }
                         .frame(width: showStats ? geometry.size.width * 0.6 : geometry.size.width)
 
@@ -50,6 +52,7 @@ struct GameView: View {
                                 showStats: $showStats
                             )
                             .padding()
+                            .padding(.top, geometry.safeAreaInsets.top)
                         }
                         .frame(height: showStats ? geometry.size.height * 0.5 : geometry.size.height)
 
@@ -64,6 +67,23 @@ struct GameView: View {
             }
         }
         .animation(.easeInOut(duration: 0.3), value: showStats)
+        .onChange(of: scenePhase) { oldPhase, newPhase in
+            switch newPhase {
+            case .background:
+                // Keep simulation running in background
+                viewModel.scene.isPaused = false
+                print("App moved to background - simulation continues")
+            case .inactive:
+                // Don't pause during transitions
+                break
+            case .active:
+                // Ensure simulation is running when active
+                viewModel.scene.isPaused = false
+                print("App moved to foreground")
+            @unknown default:
+                break
+            }
+        }
     }
 }
 
