@@ -12,10 +12,11 @@ import SpriteKit
 final class GameSceneTests: XCTestCase {
 
     var scene: GameScene!
+    let defaultConfig = GameConfiguration.default
 
     override func setUp() {
         super.setUp()
-        scene = GameScene(size: CGSize(width: 600, height: 800))
+        scene = GameScene(size: CGSize(width: 600, height: 800), configuration: defaultConfig)
         let view = SKView(frame: CGRect(x: 0, y: 0, width: 600, height: 800))
         view.presentScene(scene)
     }
@@ -46,48 +47,52 @@ final class GameSceneTests: XCTestCase {
         let trials = 100
 
         for _ in 0..<trials {
-            let parent = Organism(speed: 10, position: .zero, generation: 0)
+            let parent = Organism(speed: 10, position: .zero, generation: 0, configuration: defaultConfig)
             parent.hasFoodToday = true
 
-            // Simulate reproduction check
-            if Double.random(in: 0...1) < 0.7 {
+            // Simulate reproduction check using config
+            if Double.random(in: 0...1) < defaultConfig.reproductionProbability {
                 reproductionCount += 1
             }
         }
 
         // Should be roughly 70% (allow 15% margin for randomness)
         let ratio = Double(reproductionCount) / Double(trials)
-        XCTAssertTrue(ratio > 0.55 && ratio < 0.85, "Reproduction should occur approximately 70% of the time")
+        let expectedRatio = defaultConfig.reproductionProbability
+        let margin = 0.15
+        XCTAssertTrue(ratio > expectedRatio - margin && ratio < expectedRatio + margin,
+                     "Reproduction should occur approximately \(Int(expectedRatio * 100))% of the time")
     }
 
     func testMutationRange() {
-        let parent = Organism(speed: 15, position: .zero, generation: 0)
+        let parent = Organism(speed: 15, position: .zero, generation: 0, configuration: defaultConfig)
 
         // Test multiple mutations
         for _ in 0..<50 {
             let child = parent.reproduce(at: .zero)
             let difference = abs(child.speed - parent.speed)
-            XCTAssertTrue(difference <= 2, "Mutation should be within ±2")
+            XCTAssertTrue(difference <= defaultConfig.mutationRange, "Mutation should be within configured range")
         }
     }
 
     func testGenerationIncrement() {
-        let parent = Organism(speed: 10, position: .zero, generation: 5)
+        let parent = Organism(speed: 10, position: .zero, generation: 5, configuration: defaultConfig)
         let child = parent.reproduce(at: .zero)
 
         XCTAssertEqual(child.generation, 6, "Child generation should be parent + 1")
     }
 
     func testCollisionDetection() {
-        let organism = Organism(speed: 10, position: CGPoint(x: 100, y: 100), generation: 0)
+        let organism = Organism(speed: 10, position: CGPoint(x: 100, y: 100), generation: 0, configuration: defaultConfig)
         let food = Food(position: CGPoint(x: 105, y: 105))
 
         let dx = food.position.x - organism.position.x
         let dy = food.position.y - organism.position.y
         let distance = sqrt(dx * dx + dy * dy)
 
-        // Organism radius: 10, Food size: 8 (radius 4), combined: 14
-        XCTAssertTrue(distance < 14, "Organism and food should be close enough to collide")
+        // Calculate collision distance using config
+        let collisionDistance = defaultConfig.organismRadius + (defaultConfig.foodSize / 2)
+        XCTAssertTrue(distance < collisionDistance, "Organism and food should be close enough to collide")
     }
 
     func testDailySnapshotCreation() {

@@ -10,15 +10,17 @@ import CoreGraphics
 
 class Organism: Identifiable, Equatable {
     let id: UUID
-    var speed: Int  // 1-30 range
+    var speed: Int
     var position: CGPoint
     var hasFoodToday: Bool
     var targetFood: Food?
     var generation: Int
+    let configuration: GameConfiguration
 
-    init(id: UUID = UUID(), speed: Int, position: CGPoint, generation: Int = 0) {
+    init(id: UUID = UUID(), speed: Int, position: CGPoint, generation: Int = 0, configuration: GameConfiguration = .default) {
         self.id = id
-        self.speed = max(1, min(30, speed))  // Clamp to 1-30 range
+        self.configuration = configuration
+        self.speed = max(configuration.minSpeed, min(configuration.maxSpeed, speed))
         self.position = position
         self.hasFoodToday = false
         self.targetFood = nil
@@ -27,9 +29,9 @@ class Organism: Identifiable, Equatable {
 
     // Reproduction with mutation
     func reproduce(at newPosition: CGPoint) -> Organism {
-        let mutation = Int.random(in: -2...2)
-        let childSpeed = max(1, min(30, speed + mutation))
-        return Organism(speed: childSpeed, position: newPosition, generation: generation + 1)
+        let mutation = Int.random(in: -configuration.mutationRange...configuration.mutationRange)
+        let childSpeed = max(configuration.minSpeed, min(configuration.maxSpeed, speed + mutation))
+        return Organism(speed: childSpeed, position: newPosition, generation: generation + 1, configuration: configuration)
     }
 
     // Calculate movement for this frame
@@ -51,7 +53,8 @@ class Organism: Identifiable, Equatable {
 
     // Color based on speed (blue=slow, red=fast)
     var color: (red: Double, green: Double, blue: Double) {
-        let ratio = Double(speed - 1) / 29.0  // Normalize to 0-1
+        let speedRange = Double(configuration.maxSpeed - configuration.minSpeed)
+        let ratio = speedRange > 0 ? Double(speed - configuration.minSpeed) / speedRange : 0.0
         return (red: ratio, green: 0.0, blue: 1.0 - ratio)
     }
 

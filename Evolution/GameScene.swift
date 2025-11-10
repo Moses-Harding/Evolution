@@ -10,13 +10,8 @@ import Combine
 
 class GameScene: SKScene {
 
-    // MARK: - Constants
-    private let dayCycleDuration: TimeInterval = 30.0  // Reduced from 60s
-    private let movementPhaseDuration: TimeInterval = 25.0  // Reduced from 50s
-    private let reproductionProbability: Double = 0.7
-    private let spawnDistance: CGFloat = 30.0
-    private let organismRadius: CGFloat = 10.0
-    private let foodSize: CGFloat = 8.0
+    // MARK: - Configuration
+    private let configuration: GameConfiguration
 
     // MARK: - Game State
     private var organisms: [Organism] = []
@@ -37,6 +32,17 @@ class GameScene: SKScene {
     // MARK: - Publishers
     let statisticsPublisher = PassthroughSubject<GameStatistics, Never>()
 
+    // MARK: - Initialization
+    init(size: CGSize, configuration: GameConfiguration) {
+        self.configuration = configuration
+        super.init(size: size)
+    }
+
+    required init?(coder aDecoder: NSCoder) {
+        self.configuration = .default
+        super.init(coder: aDecoder)
+    }
+
     // MARK: - Setup
     override func didMove(to view: SKView) {
         backgroundColor = .black
@@ -51,10 +57,15 @@ class GameScene: SKScene {
     }
 
     private func setupInitialPopulation() {
-        for _ in 0..<10 {
+        for _ in 0..<configuration.initialPopulation {
             let randomX = CGFloat.random(in: 50...(size.width - 50))
             let randomY = CGFloat.random(in: 50...(size.height - 50))
-            let organism = Organism(speed: 10, position: CGPoint(x: randomX, y: randomY), generation: 0)
+            let organism = Organism(
+                speed: configuration.initialSpeed,
+                position: CGPoint(x: randomX, y: randomY),
+                generation: 0,
+                configuration: configuration
+            )
             addOrganism(organism)
         }
     }
@@ -67,8 +78,8 @@ class GameScene: SKScene {
         food.removeAll()
         foodNodes.removeAll()
 
-        // Spawn 5 new food items at random positions
-        for _ in 0..<5 {
+        // Spawn food items based on configuration
+        for _ in 0..<configuration.foodPerDay {
             let randomX = CGFloat.random(in: 20...(size.width - 20))
             let randomY = CGFloat.random(in: 20...(size.height - 20))
             let foodItem = Food(position: CGPoint(x: randomX, y: randomY))
@@ -82,7 +93,7 @@ class GameScene: SKScene {
 
         dayTimer += deltaTime
 
-        if dayTimer >= dayCycleDuration {
+        if dayTimer >= configuration.dayCycleDuration {
             // End of day - handle reproduction and death
             endDay()
             dayTimer = 0.0
@@ -90,7 +101,7 @@ class GameScene: SKScene {
             isMovementPhase = true
             statistics.currentDay = currentDay
             showDayTransition()
-        } else if dayTimer >= movementPhaseDuration && isMovementPhase {
+        } else if dayTimer >= configuration.movementPhaseDuration && isMovementPhase {
             // End movement phase
             isMovementPhase = false
         }
@@ -101,7 +112,7 @@ class GameScene: SKScene {
 
             // Auto-advance if all food is eaten
             if allFoodClaimed() {
-                dayTimer = movementPhaseDuration
+                dayTimer = configuration.movementPhaseDuration
                 isMovementPhase = false
             }
         }
@@ -156,7 +167,7 @@ class GameScene: SKScene {
                 let dy = target.position.y - organism.position.y
                 let distance = sqrt(dx * dx + dy * dy)
 
-                let collisionDistance = organismRadius + (foodSize / 2)
+                let collisionDistance = CGFloat(configuration.organismRadius) + CGFloat(configuration.foodSize / 2)
                 if distance < collisionDistance {
                     // Collision detected!
                     organism.hasFoodToday = true
@@ -185,13 +196,36 @@ class GameScene: SKScene {
 
                     // Add celebration particles and effects
                     addFeedingCelebration(at: organism.position, color: organism.color)
+
+                    // Immediate reproduction attempt
+                    if Double.random(in: 0...1) < configuration.reproductionProbability {
+                        let angle = Double.random(in: 0...(2 * .pi))
+                        let offsetX = cos(angle) * configuration.spawnDistance
+                        let offsetY = sin(angle) * configuration.spawnDistance
+                        let childPosition = CGPoint(
+                            x: organism.position.x + CGFloat(offsetX),
+                            y: organism.position.y + CGFloat(offsetY)
+                        )
+
+                        // Clamp to scene bounds
+                        let clampedPosition = CGPoint(
+                            x: max(20, min(size.width - 20, childPosition.x)),
+                            y: max(20, min(size.height - 20, childPosition.y))
+                        )
+
+                        let child = organism.reproduce(at: clampedPosition)
+                        addOrganism(child, animated: true)
+                        showReproductionAnimation(from: organism.position, to: child.position)
+
+                        // Track birth in statistics
+                        statistics.births += 1
+                    }
                 }
             }
         }
     }
 
     private func endDay() {
-        var births = 0
         var deaths = 0
 
         // Handle deaths (organisms that didn't eat)
@@ -207,30 +241,8 @@ class GameScene: SKScene {
 
         organisms = survivors
 
-        // Handle reproduction
-        var newborns: [(organism: Organism, parentPosition: CGPoint)] = []
+        // Reset all organisms for next day
         for organism in organisms {
-            if organism.hasFoodToday && Double.random(in: 0...1) < reproductionProbability {
-                let angle = Double.random(in: 0...(2 * .pi))
-                let offsetX = cos(angle) * spawnDistance
-                let offsetY = sin(angle) * spawnDistance
-                let childPosition = CGPoint(
-                    x: organism.position.x + CGFloat(offsetX),
-                    y: organism.position.y + CGFloat(offsetY)
-                )
-
-                // Clamp to scene bounds
-                let clampedPosition = CGPoint(
-                    x: max(20, min(size.width - 20, childPosition.x)),
-                    y: max(20, min(size.height - 20, childPosition.y))
-                )
-
-                let child = organism.reproduce(at: clampedPosition)
-                newborns.append((child, organism.position))
-                births += 1
-            }
-
-            // Reset for next day
             organism.hasFoodToday = false
             organism.targetFood = nil
 
@@ -241,16 +253,12 @@ class GameScene: SKScene {
             }
         }
 
-        // Add newborns with reproduction animation
-        for (newborn, parentPosition) in newborns {
-            addOrganism(newborn, animated: true)
-            showReproductionAnimation(from: parentPosition, to: newborn.position)
-        }
-
         // Update statistics
-        statistics.births = births
         statistics.deaths = deaths
         updateStatistics()
+
+        // Reset births counter for next day
+        statistics.births = 0
 
         // Spawn new food for next day
         spawnFood()
@@ -260,7 +268,7 @@ class GameScene: SKScene {
     private func addOrganism(_ organism: Organism, animated: Bool = false) {
         organisms.append(organism)
 
-        let node = SKShapeNode(circleOfRadius: organismRadius)
+        let node = SKShapeNode(circleOfRadius: CGFloat(configuration.organismRadius))
         let color = organism.color
         node.fillColor = SKColor(red: CGFloat(color.red), green: CGFloat(color.green), blue: CGFloat(color.blue), alpha: 1.0)
         node.strokeColor = .clear
@@ -340,6 +348,7 @@ class GameScene: SKScene {
     private func addFood(_ foodItem: Food, animated: Bool = true) {
         food.append(foodItem)
 
+        let foodSize = CGFloat(configuration.foodSize)
         let node = SKShapeNode(rectOf: CGSize(width: foodSize, height: foodSize))
         node.fillColor = .green
         node.strokeColor = .clear
@@ -518,7 +527,7 @@ class GameScene: SKScene {
         // Multiple expanding rings at parent
         for i in 0..<3 {
             let delay = Double(i) * 0.15
-            let pulse = SKShapeNode(circleOfRadius: organismRadius * 1.5)
+            let pulse = SKShapeNode(circleOfRadius: CGFloat(configuration.organismRadius) * 1.5)
             pulse.strokeColor = .cyan
             pulse.lineWidth = 3
             pulse.fillColor = .clear
@@ -575,7 +584,7 @@ class GameScene: SKScene {
     }
 
     private func addGlowRing(at position: CGPoint, color: (red: Double, green: Double, blue: Double)) {
-        let ring = SKShapeNode(circleOfRadius: organismRadius)
+        let ring = SKShapeNode(circleOfRadius: CGFloat(configuration.organismRadius))
         ring.strokeColor = SKColor(red: CGFloat(color.red), green: CGFloat(color.green), blue: CGFloat(color.blue), alpha: 0.8)
         ring.lineWidth = 3
         ring.fillColor = .clear
@@ -624,7 +633,7 @@ class GameScene: SKScene {
 
     private func addImplosionRing(at position: CGPoint, color: (red: Double, green: Double, blue: Double)) {
         for i in 0..<3 {
-            let ring = SKShapeNode(circleOfRadius: organismRadius * 3)
+            let ring = SKShapeNode(circleOfRadius: CGFloat(configuration.organismRadius) * 3)
             ring.strokeColor = SKColor(red: CGFloat(color.red * 0.5), green: CGFloat(color.green * 0.5), blue: CGFloat(color.blue * 0.5), alpha: 0.6)
             ring.lineWidth = 2
             ring.fillColor = .clear
@@ -705,7 +714,7 @@ class GameScene: SKScene {
         }
 
         // Expanding success ring
-        let ring = SKShapeNode(circleOfRadius: organismRadius)
+        let ring = SKShapeNode(circleOfRadius: CGFloat(configuration.organismRadius))
         ring.strokeColor = .yellow
         ring.lineWidth = 3
         ring.fillColor = .clear

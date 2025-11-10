@@ -10,11 +10,24 @@ import SpriteKit
 import Combine
 
 struct GameView: View {
-    @StateObject private var viewModel = GameViewModel()
+    @State private var viewModel: GameViewModel?
     @State private var showStats = true
+    @State private var showConfiguration = true
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
+        if showConfiguration {
+            ConfigurationView { config in
+                viewModel = GameViewModel(configuration: config)
+                showConfiguration = false
+            }
+        } else if let viewModel = viewModel {
+            gameContent(viewModel: viewModel)
+        }
+    }
+
+    @ViewBuilder
+    private func gameContent(viewModel: GameViewModel) -> some View {
         // Capture safe area insets BEFORE ignoring them
         GeometryReader { outerGeometry in
             GeometryReader { geometry in
@@ -163,11 +176,13 @@ class GameViewModel: ObservableObject {
     }
 
     let scene: GameScene
+    let configuration: GameConfiguration
 
     private var cancellables = Set<AnyCancellable>()
 
-    init() {
-        scene = GameScene(size: CGSize(width: 600, height: 800))
+    init(configuration: GameConfiguration = .default) {
+        self.configuration = configuration
+        scene = GameScene(size: CGSize(width: 600, height: 800), configuration: configuration)
         scene.scaleMode = .aspectFill
 
         // Subscribe to statistics updates
