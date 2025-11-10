@@ -40,6 +40,11 @@ class GameScene: SKScene {
     // MARK: - Setup
     override func didMove(to view: SKView) {
         backgroundColor = .black
+
+        // Configure view for background execution
+        view.ignoresSiblingOrder = true
+        view.shouldCullNonVisibleNodes = false
+
         setupInitialPopulation()
         spawnFood()
         updateStatistics()
