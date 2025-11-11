@@ -2,6 +2,39 @@
 
 This document contains ideas for additional evolutionary traits that could make the simulation more interesting and complex.
 
+## 🎮 Current Simulation Features (Phase 2 Complete!)
+
+### Core Evolutionary Traits
+- **Speed** (1-30): Movement rate with color coding (blue=slow, red=fast)
+- **Sense Range** (50-400): Detection radius with visual indicators
+- **Size** (0.5-2.0): Affects collision radius and movement speed (50% penalty at max size)
+
+### Visual Enhancements
+- **Sense Range Circles**: Semi-transparent visualization of detection zones
+- **Movement Trails**: Fading colored paths showing organism movement (2s fade)
+- **Elite Highlighting**: Golden glow + pulse animation for top 20% organisms
+- **Population Health**: Color-coded day transitions (🌟 green=thriving, 💀 red=critical)
+
+### Environmental Systems
+- **Dynamic Food Patterns** (rotates every 10 days):
+  - **Random**: General-purpose environment
+  - **Clustered**: Favors large organisms
+  - **Scattered**: Favors fast + small organisms
+  - **Ring**: Favors long sense range
+- **Condition-Based Days**: End when all food eaten OR all organisms fed
+- **Corpse Decay**: Dead organisms become food for next day
+
+### Fitness & Competition
+- **Environment-Adaptive Fitness Scoring**: Different traits excel in different patterns
+- **Generation Tracking**: Successful lineages accumulate generational bonuses
+- **Real-Time Success Indicators**: Fed organisms celebrated with particles and effects
+
+### Game Feel
+- **Dramatic reproduction animations**: Buildup → POP! → Split with particles
+- **Death animations**: Spinning implosion with color-coded particles
+- **Pattern change notifications**: Visual alerts when environment shifts
+- **Day transitions**: Epic animations with population stats
+
 ## Implemented Traits
 
 ### Speed
@@ -134,6 +167,10 @@ Some traits work particularly well together:
 - Sense Range
 - Size
 - Visual sense range indicators
+- Movement trails
+- Dynamic food distribution patterns
+- Population health indicators
+- Elite organism highlighting with fitness scoring
 
 ### Phase 3 (Current): 🎯 Next Up
 - Energy Efficiency (adds survival complexity, pairs well with size)
