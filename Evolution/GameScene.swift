@@ -1431,7 +1431,8 @@ class GameScene: SKScene {
                     statistics.deathsByHazard += 1
                     // Show hazard death label
                     showFloatingLabel(text: "HAZARD!", at: organism.position, color: SKColor(red: 1.0, green: 0.2, blue: 0.2, alpha: 1.0), fontSize: 14, offsetY: 30)
-                    // Add death effect at hazard
+                    // Add corpse marker and death effect
+                    addCorpseMarker(at: organism.position, color: organism.color)
                     addDeathParticles(at: organism.position, color: organism.color)
                     break
                 }
@@ -1515,16 +1516,19 @@ class GameScene: SKScene {
                     // Low energy death
                     statistics.deathsByLowEnergy += 1
                     showFloatingLabel(text: "EXHAUSTED", at: organism.position, color: .orange, fontSize: 12)
+                    addCorpseMarker(at: organism.position, color: organism.color)
                     removeOrganism(organism, animated: true)
                 } else if organism.age >= organism.maxAge {
                     // Old age death
                     statistics.deathsByOldAge += 1
                     showFloatingLabel(text: "OLD AGE", at: organism.position, color: .gray, fontSize: 12)
+                    addCorpseMarker(at: organism.position, color: organism.color)
                     removeOrganism(organism, animated: true)
                 } else {
                     // Starvation (didn't eat)
                     statistics.deathsByStarvation += 1
                     showFloatingLabel(text: "STARVED", at: organism.position, color: .red, fontSize: 12)
+                    addCorpseMarker(at: organism.position, color: organism.color)
                     removeOrganism(organism, animated: true)
                 }
                 return false
@@ -2505,6 +2509,35 @@ class GameScene: SKScene {
 
         // Energy particles traveling from parent to child
         addEnergyParticles(from: parentPosition, to: childPosition)
+    }
+
+    // MARK: - Corpse Markers
+    private func addCorpseMarker(at position: CGPoint, color: (red: Double, green: Double, blue: Double)) {
+        // Create a cross/X marker for corpse
+        let markerSize: CGFloat = 12
+        let marker = SKShapeNode()
+
+        // Draw X shape
+        let path = CGMutablePath()
+        path.move(to: CGPoint(x: -markerSize/2, y: -markerSize/2))
+        path.addLine(to: CGPoint(x: markerSize/2, y: markerSize/2))
+        path.move(to: CGPoint(x: markerSize/2, y: -markerSize/2))
+        path.addLine(to: CGPoint(x: -markerSize/2, y: markerSize/2))
+
+        marker.path = path
+        marker.strokeColor = SKColor(red: CGFloat(color.red * 0.5), green: CGFloat(color.green * 0.5), blue: CGFloat(color.blue * 0.5), alpha: 0.8)
+        marker.lineWidth = 3
+        marker.position = position
+        marker.zPosition = 2
+        marker.glowWidth = 2
+
+        addChild(marker)
+
+        // Fade out and remove after 5 seconds
+        let wait = SKAction.wait(forDuration: 5.0)
+        let fadeOut = SKAction.fadeOut(withDuration: 2.0)
+        let remove = SKAction.removeFromParent()
+        marker.run(SKAction.sequence([wait, fadeOut, remove]))
     }
 
     // MARK: - Food Scarcity Warning
