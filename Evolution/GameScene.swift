@@ -1035,14 +1035,42 @@ class GameScene: SKScene {
                 newPosition.x = max(playableMinX, min(playableMaxX, newPosition.x))
                 newPosition.y = max(playableMinY, min(playableMaxY, newPosition.y))
 
-                // Check for obstacle collisions and adjust position if needed
+                // Check for obstacle collisions and adjust position with sliding
                 var collided = false
                 for obstacle in obstacles {
                     if obstacle.collidesWith(organismPosition: newPosition, organismRadius: CGFloat(organism.effectiveRadius)) {
-                        // Collision detected - revert to old position
-                        newPosition = oldPosition
                         collided = true
-                        // Clear target to find a new path next frame
+
+                        // Try sliding along the obstacle instead of stopping completely
+                        // Try moving only horizontally
+                        let horizontalPosition = CGPoint(x: newPosition.x, y: oldPosition.y)
+                        if !obstacle.collidesWith(organismPosition: horizontalPosition, organismRadius: CGFloat(organism.effectiveRadius)) {
+                            newPosition = horizontalPosition
+                            break
+                        }
+
+                        // Try moving only vertically
+                        let verticalPosition = CGPoint(x: oldPosition.x, y: newPosition.y)
+                        if !obstacle.collidesWith(organismPosition: verticalPosition, organismRadius: CGFloat(organism.effectiveRadius)) {
+                            newPosition = verticalPosition
+                            break
+                        }
+
+                        // Can't slide, push back from obstacle
+                        let pushbackDistance: CGFloat = 2.0
+                        let dx = oldPosition.x - obstacle.position.x
+                        let dy = oldPosition.y - obstacle.position.y
+                        let distance = sqrt(dx * dx + dy * dy)
+
+                        if distance > 0.1 {
+                            let pushX = (dx / distance) * pushbackDistance
+                            let pushY = (dy / distance) * pushbackDistance
+                            newPosition = CGPoint(x: oldPosition.x + pushX, y: oldPosition.y + pushY)
+                        } else {
+                            newPosition = oldPosition
+                        }
+
+                        // Clear target to find a new path
                         organism.targetFood = nil
                         break
                     }
@@ -1050,8 +1078,9 @@ class GameScene: SKScene {
 
                 organism.position = newPosition
 
-                // Consume energy only if actually moved
-                if !collided {
+                // Consume energy only if actually moved significantly
+                let distanceMoved = sqrt(pow(newPosition.x - oldPosition.x, 2) + pow(newPosition.y - oldPosition.y, 2))
+                if distanceMoved > 0.5 {
                     organism.consumeEnergy(energyCost)
                 }
 
