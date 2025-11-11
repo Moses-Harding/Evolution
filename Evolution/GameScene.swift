@@ -17,12 +17,26 @@ class GameScene: SKScene {
     private var organisms: [Organism] = []
     private var food: [Food] = []
     private var organismNodes: [UUID: SKShapeNode] = [:]
+    private var senseRangeNodes: [UUID: SKShapeNode] = [:]  // Visual sense range indicators
+    private var trailNodes: [UUID: [SKShapeNode]] = [:]  // Movement trails
     private var foodNodes: [UUID: SKShapeNode] = [:]
     private var corpsePositions: [CGPoint] = []  // Store positions of dead organisms
 
     private var currentDay: Int = 0
-    private var dayTimer: TimeInterval = 0.0
-    private var isMovementPhase: Bool = true
+    var showSenseRanges: Bool = true  // Toggle for sense range visualization
+    var showTrails: Bool = true  // Toggle for movement trails
+    private let maxTrailLength: Int = 20  // Maximum trail segments per organism
+    var showEliteHighlights: Bool = true  // Toggle for elite organism highlighting
+
+    // Food distribution patterns
+    enum FoodPattern {
+        case random      // Completely random
+        case clustered   // Food spawns in clusters
+        case scattered   // Food maximally spread out
+        case ring        // Food spawns in a ring pattern
+    }
+    private var currentFoodPattern: FoodPattern = .random
+    private let patternChangeInterval: Int = 10  // Change pattern every N days
 
     // Speed control
     var timeScale: Double = 1.0  // Can be set to 2.0 for super speed
@@ -63,6 +77,9 @@ class GameScene: SKScene {
             let randomY = CGFloat.random(in: 50...(size.height - 50))
             let organism = Organism(
                 speed: configuration.initialSpeed,
+                senseRange: configuration.initialSenseRange,
+                size: configuration.initialSize,
+                fertility: configuration.initialFertility,
                 position: CGPoint(x: randomX, y: randomY),
                 generation: 0,
                 configuration: configuration
@@ -79,6 +96,11 @@ class GameScene: SKScene {
         food.removeAll()
         foodNodes.removeAll()
 
+        // Change food pattern periodically
+        if currentDay > 0 && currentDay % patternChangeInterval == 0 {
+            rotateFoodPattern()
+        }
+
         // First, spawn food at corpse positions (corpses from previous day)
         for corpsePosition in corpsePositions {
             let foodItem = Food(position: corpsePosition)
@@ -86,44 +108,152 @@ class GameScene: SKScene {
         }
         corpsePositions.removeAll()  // Clear corpse positions after spawning
 
-        // Then spawn regular food items based on configuration
-        for _ in 0..<configuration.foodPerDay {
-            let randomX = CGFloat.random(in: 20...(size.width - 20))
-            let randomY = CGFloat.random(in: 20...(size.height - 20))
-            let foodItem = Food(position: CGPoint(x: randomX, y: randomY))
+        // Then spawn regular food items based on current pattern
+        let positions = generateFoodPositions(count: configuration.foodPerDay, pattern: currentFoodPattern)
+        for position in positions {
+            let foodItem = Food(position: position)
             addFood(foodItem)
         }
+    }
+
+    private func rotateFoodPattern() {
+        let patterns: [FoodPattern] = [.random, .clustered, .scattered, .ring]
+        if let currentIndex = patterns.firstIndex(of: currentFoodPattern) {
+            let nextIndex = (currentIndex + 1) % patterns.count
+            currentFoodPattern = patterns[nextIndex]
+
+            // Show pattern change notification
+            showPatternChangeNotification()
+        }
+    }
+
+    private func generateFoodPositions(count: Int, pattern: FoodPattern) -> [CGPoint] {
+        var positions: [CGPoint] = []
+        let margin: CGFloat = 30
+        let centerX = size.width / 2
+        let centerY = size.height / 2
+
+        switch pattern {
+        case .random:
+            for _ in 0..<count {
+                let x = CGFloat.random(in: margin...(size.width - margin))
+                let y = CGFloat.random(in: margin...(size.height - margin))
+                positions.append(CGPoint(x: x, y: y))
+            }
+
+        case .clustered:
+            // Create 2-3 clusters
+            let clusterCount = Int.random(in: 2...3)
+            let itemsPerCluster = count / clusterCount
+
+            for _ in 0..<clusterCount {
+                let clusterX = CGFloat.random(in: margin...(size.width - margin))
+                let clusterY = CGFloat.random(in: margin...(size.height - margin))
+                let clusterRadius: CGFloat = 80
+
+                for _ in 0..<itemsPerCluster {
+                    let angle = CGFloat.random(in: 0...(2 * .pi))
+                    let radius = CGFloat.random(in: 0...clusterRadius)
+                    let x = clusterX + cos(angle) * radius
+                    let y = clusterY + sin(angle) * radius
+                    let clampedX = max(margin, min(size.width - margin, x))
+                    let clampedY = max(margin, min(size.height - margin, y))
+                    positions.append(CGPoint(x: clampedX, y: clampedY))
+                }
+            }
+
+            // Add remaining items randomly
+            for _ in positions.count..<count {
+                let x = CGFloat.random(in: margin...(size.width - margin))
+                let y = CGFloat.random(in: margin...(size.height - margin))
+                positions.append(CGPoint(x: x, y: y))
+            }
+
+        case .scattered:
+            // Divide area into grid and place one item per cell
+            let cols = Int(sqrt(Double(count)))
+            let rows = (count + cols - 1) / cols
+            let cellWidth = (size.width - 2 * margin) / CGFloat(cols)
+            let cellHeight = (size.height - 2 * margin) / CGFloat(rows)
+
+            for i in 0..<count {
+                let col = i % cols
+                let row = i / cols
+                let x = margin + CGFloat(col) * cellWidth + CGFloat.random(in: 0...cellWidth)
+                let y = margin + CGFloat(row) * cellHeight + CGFloat.random(in: 0...cellHeight)
+                positions.append(CGPoint(x: x, y: y))
+            }
+
+        case .ring:
+            // Spawn food in a ring around the center
+            let radius = min(size.width, size.height) / 3
+            for i in 0..<count {
+                let angle = (2 * .pi * CGFloat(i)) / CGFloat(count)
+                let radiusVariation = CGFloat.random(in: -30...30)
+                let x = centerX + cos(angle) * (radius + radiusVariation)
+                let y = centerY + sin(angle) * (radius + radiusVariation)
+                positions.append(CGPoint(x: x, y: y))
+            }
+        }
+
+        return positions
+    }
+
+    private func showPatternChangeNotification() {
+        let patternName: String
+        switch currentFoodPattern {
+        case .random: patternName = "Random"
+        case .clustered: patternName = "Clustered"
+        case .scattered: patternName = "Scattered"
+        case .ring: patternName = "Ring"
+        }
+
+        let label = SKLabelNode(text: "Environment: \(patternName)")
+        label.fontName = "Helvetica-Bold"
+        label.fontSize = 24
+        label.fontColor = .cyan
+        label.position = CGPoint(x: size.width / 2, y: size.height - 50)
+        label.zPosition = 1000
+        label.alpha = 0
+
+        addChild(label)
+
+        let fadeIn = SKAction.fadeIn(withDuration: 0.3)
+        let wait = SKAction.wait(forDuration: 2.0)
+        let fadeOut = SKAction.fadeOut(withDuration: 0.5)
+        let remove = SKAction.removeFromParent()
+
+        label.run(SKAction.sequence([fadeIn, wait, fadeOut, remove]))
     }
 
     // MARK: - Update Loop
     override func update(_ currentTime: TimeInterval) {
         let deltaTime = (1.0 / 60.0) * timeScale  // Apply time scale
 
-        dayTimer += deltaTime
-
-        if dayTimer >= configuration.dayCycleDuration {
+        // Check if day should end
+        if shouldEndDay() {
             // End of day - handle reproduction and death
             endDay()
-            dayTimer = 0.0
             currentDay += 1
-            isMovementPhase = true
             statistics.currentDay = currentDay
             showDayTransition()
-        } else if dayTimer >= configuration.movementPhaseDuration && isMovementPhase {
-            // End movement phase
-            isMovementPhase = false
-        }
-
-        if isMovementPhase {
+            spawnFood()
+            resetOrganismsForNewDay()
+        } else {
+            // Continue movement and collision detection
             updateOrganisms(deltaTime: deltaTime)
             checkCollisions()
-
-            // Auto-advance if all food is eaten
-            if allFoodClaimed() {
-                dayTimer = configuration.movementPhaseDuration
-                isMovementPhase = false
-            }
         }
+    }
+
+    private func shouldEndDay() -> Bool {
+        // Day ends when either all food is eaten OR all organisms have eaten
+        return allFoodClaimed() || allOrganismsFed()
+    }
+
+    private func allOrganismsFed() -> Bool {
+        // Need at least one organism, and all must have food
+        return !organisms.isEmpty && organisms.allSatisfy { $0.hasFoodToday }
     }
 
     private func allFoodClaimed() -> Bool {
@@ -139,27 +269,78 @@ class GameScene: SKScene {
 
             // Move towards target food
             if let target = organism.targetFood, !organism.hasFoodToday {
+                let oldPosition = organism.position
                 let newPosition = organism.move(towards: target.position, deltaTime: deltaTime)
                 organism.position = newPosition
+
+                // Add trail segment if position changed significantly
+                if showTrails {
+                    let dx = newPosition.x - oldPosition.x
+                    let dy = newPosition.y - oldPosition.y
+                    let distance = sqrt(dx * dx + dy * dy)
+                    if distance > 2.0 {  // Only add trail if moved at least 2 pixels
+                        addTrailSegment(for: organism, from: oldPosition, to: newPosition)
+                    }
+                }
 
                 // Update visual node
                 if let node = organismNodes[organism.id] {
                     node.position = newPosition
                 }
+
+                // Update sense range indicator
+                if let senseNode = senseRangeNodes[organism.id] {
+                    senseNode.position = newPosition
+                }
             }
+        }
+    }
+
+    private func addTrailSegment(for organism: Organism, from: CGPoint, to: CGPoint) {
+        // Create trail segment
+        let path = CGMutablePath()
+        path.move(to: from)
+        path.addLine(to: to)
+
+        let trail = SKShapeNode(path: path)
+        let color = organism.color
+        trail.strokeColor = SKColor(red: CGFloat(color.red), green: CGFloat(color.green), blue: CGFloat(color.blue), alpha: 0.3)
+        trail.lineWidth = 1.5
+        trail.zPosition = 0.5
+
+        addChild(trail)
+
+        // Add to trail tracking
+        if trailNodes[organism.id] == nil {
+            trailNodes[organism.id] = []
+        }
+        trailNodes[organism.id]?.append(trail)
+
+        // Fade out trail segment over time
+        let fadeOut = SKAction.fadeOut(withDuration: 2.0)
+        let remove = SKAction.removeFromParent()
+        trail.run(SKAction.sequence([fadeOut, remove]))
+
+        // Remove old trail segments if too many
+        if let trails = trailNodes[organism.id], trails.count > maxTrailLength {
+            let oldTrail = trails.first
+            oldTrail?.removeFromParent()
+            trailNodes[organism.id]?.removeFirst()
         }
     }
 
     private func findNearestUnclaimedFood(for organism: Organism) -> Food? {
         var nearest: Food?
         var nearestDistance: CGFloat = .infinity
+        let maxSenseDistance = CGFloat(organism.senseRange)
 
         for foodItem in food where !foodItem.isClaimed {
             let dx = foodItem.position.x - organism.position.x
             let dy = foodItem.position.y - organism.position.y
             let distance = sqrt(dx * dx + dy * dy)
 
-            if distance < nearestDistance {
+            // Only consider food within sense range
+            if distance <= maxSenseDistance && distance < nearestDistance {
                 nearestDistance = distance
                 nearest = foodItem
             }
@@ -175,7 +356,7 @@ class GameScene: SKScene {
                 let dy = target.position.y - organism.position.y
                 let distance = sqrt(dx * dx + dy * dy)
 
-                let collisionDistance = CGFloat(configuration.organismRadius) + CGFloat(configuration.foodSize / 2)
+                let collisionDistance = CGFloat(organism.effectiveRadius) + CGFloat(configuration.foodSize / 2)
                 if distance < collisionDistance {
                     // Collision detected!
                     organism.hasFoodToday = true
@@ -204,39 +385,42 @@ class GameScene: SKScene {
 
                     // Add celebration particles and effects
                     addFeedingCelebration(at: organism.position, color: organism.color)
-
-                    // Immediate reproduction attempt
-                    if Double.random(in: 0...1) < configuration.reproductionProbability {
-                        let angle = Double.random(in: 0...(2 * .pi))
-                        let offsetX = cos(angle) * configuration.spawnDistance
-                        let offsetY = sin(angle) * configuration.spawnDistance
-                        let childPosition = CGPoint(
-                            x: organism.position.x + CGFloat(offsetX),
-                            y: organism.position.y + CGFloat(offsetY)
-                        )
-
-                        // Clamp to scene bounds
-                        let clampedPosition = CGPoint(
-                            x: max(20, min(size.width - 20, childPosition.x)),
-                            y: max(20, min(size.height - 20, childPosition.y))
-                        )
-
-                        let child = organism.reproduce(at: clampedPosition)
-
-                        // Show dramatic reproduction with buildup -> POP -> split
-                        showDramaticReproduction(parent: organism, child: child, childPosition: clampedPosition)
-
-                        // Track birth in statistics
-                        statistics.births += 1
-                    }
                 }
             }
         }
     }
 
     private func endDay() {
+        var births = 0
         var deaths = 0
         corpsePositions.removeAll()  // Clear previous corpse positions
+
+        // Handle reproduction for all organisms that ate today
+        let fedOrganisms = organisms.filter { $0.hasFoodToday }
+        for organism in fedOrganisms {
+            if Double.random(in: 0...1) < organism.effectiveReproductionProbability {
+                let angle = Double.random(in: 0...(2 * .pi))
+                let offsetX = cos(angle) * configuration.spawnDistance
+                let offsetY = sin(angle) * configuration.spawnDistance
+                let childPosition = CGPoint(
+                    x: organism.position.x + CGFloat(offsetX),
+                    y: organism.position.y + CGFloat(offsetY)
+                )
+
+                // Clamp to scene bounds
+                let clampedPosition = CGPoint(
+                    x: max(20, min(size.width - 20, childPosition.x)),
+                    y: max(20, min(size.height - 20, childPosition.y))
+                )
+
+                let child = organism.reproduce(at: clampedPosition)
+
+                // Show dramatic reproduction with buildup -> POP -> split
+                showDramaticReproduction(parent: organism, child: child, childPosition: clampedPosition)
+
+                births += 1
+            }
+        }
 
         // Handle deaths (organisms that didn't eat)
         let survivors = organisms.filter { organism in
@@ -252,6 +436,13 @@ class GameScene: SKScene {
 
         organisms = survivors
 
+        // Update statistics
+        statistics.births = births
+        statistics.deaths = deaths
+        updateStatistics()
+    }
+
+    private func resetOrganismsForNewDay() {
         // Reset all organisms for next day
         for organism in organisms {
             organism.hasFoodToday = false
@@ -264,26 +455,33 @@ class GameScene: SKScene {
             }
         }
 
-        // Update statistics
-        statistics.deaths = deaths
-        updateStatistics()
-
         // Reset births counter for next day
         statistics.births = 0
-
-        // Spawn new food for next day
-        spawnFood()
     }
 
     // MARK: - Organism Management
     private func addOrganism(_ organism: Organism, animated: Bool = false) {
         organisms.append(organism)
 
-        let node = SKShapeNode(circleOfRadius: CGFloat(configuration.organismRadius))
+        // Create sense range indicator (faint circle showing detection range)
+        if showSenseRanges {
+            let senseRangeNode = SKShapeNode(circleOfRadius: CGFloat(organism.senseRange))
+            senseRangeNode.strokeColor = SKColor(white: 1.0, alpha: 0.1)
+            senseRangeNode.lineWidth = 1
+            senseRangeNode.fillColor = .clear
+            senseRangeNode.position = organism.position
+            senseRangeNode.zPosition = 1
+            senseRangeNodes[organism.id] = senseRangeNode
+            addChild(senseRangeNode)
+        }
+
+        // Create organism visual node (size-based radius)
+        let node = SKShapeNode(circleOfRadius: CGFloat(organism.effectiveRadius))
         let color = organism.color
         node.fillColor = SKColor(red: CGFloat(color.red), green: CGFloat(color.green), blue: CGFloat(color.blue), alpha: 1.0)
         node.strokeColor = .clear
         node.position = organism.position
+        node.zPosition = 10
 
         if animated {
             // Start small and invisible
@@ -324,6 +522,20 @@ class GameScene: SKScene {
     }
 
     private func removeOrganism(_ organism: Organism, animated: Bool = false) {
+        // Remove sense range indicator
+        if let senseNode = senseRangeNodes[organism.id] {
+            senseNode.removeFromParent()
+            senseRangeNodes.removeValue(forKey: organism.id)
+        }
+
+        // Remove all trail segments
+        if let trails = trailNodes[organism.id] {
+            for trail in trails {
+                trail.removeFromParent()
+            }
+            trailNodes.removeValue(forKey: organism.id)
+        }
+
         if let node = organismNodes[organism.id] {
             if animated {
                 // Get organism color for particles
@@ -413,17 +625,49 @@ class GameScene: SKScene {
             statistics.averageSpeed = 0.0
             statistics.minSpeed = 0
             statistics.maxSpeed = 0
+            statistics.averageSenseRange = 0.0
+            statistics.minSenseRange = 0
+            statistics.maxSenseRange = 0
+            statistics.averageSize = 0.0
+            statistics.minSize = 0.0
+            statistics.maxSize = 0.0
+            statistics.averageFertility = 0.0
+            statistics.minFertility = 0.0
+            statistics.maxFertility = 0.0
         } else {
             let speeds = organisms.map { $0.speed }
             statistics.averageSpeed = Double(speeds.reduce(0, +)) / Double(speeds.count)
             statistics.minSpeed = speeds.min() ?? 0
             statistics.maxSpeed = speeds.max() ?? 0
+
+            let senseRanges = organisms.map { $0.senseRange }
+            statistics.averageSenseRange = Double(senseRanges.reduce(0, +)) / Double(senseRanges.count)
+            statistics.minSenseRange = senseRanges.min() ?? 0
+            statistics.maxSenseRange = senseRanges.max() ?? 0
+
+            let sizes = organisms.map { $0.size }
+            statistics.averageSize = sizes.reduce(0.0, +) / Double(sizes.count)
+            statistics.minSize = sizes.min() ?? 0.0
+            statistics.maxSize = sizes.max() ?? 0.0
+
+            let fertilities = organisms.map { $0.fertility }
+            statistics.averageFertility = fertilities.reduce(0.0, +) / Double(fertilities.count)
+            statistics.minFertility = fertilities.min() ?? 0.0
+            statistics.maxFertility = fertilities.max() ?? 0.0
+
+            // Update elite organism highlighting
+            if showEliteHighlights {
+                updateEliteOrganisms()
+            }
         }
 
         statistics.organisms = organisms.map { organism in
             OrganismInfo(
                 id: organism.id,
                 speed: organism.speed,
+                senseRange: organism.senseRange,
+                size: organism.size,
+                fertility: organism.fertility,
                 generation: organism.generation,
                 hasFoodToday: organism.hasFoodToday
             )
@@ -445,19 +689,124 @@ class GameScene: SKScene {
         statisticsPublisher.send(statistics)
     }
 
+    private func updateEliteOrganisms() {
+        // Calculate fitness score for each organism
+        let organismsWithFitness = organisms.map { organism -> (organism: Organism, fitness: Double) in
+            let fitness = calculateFitness(for: organism)
+            return (organism, fitness)
+        }
+
+        // Sort by fitness and identify top 20%
+        let sorted = organismsWithFitness.sorted { $0.fitness > $1.fitness }
+        let eliteCount = max(1, sorted.count / 5)  // Top 20%
+        let elites = Set(sorted.prefix(eliteCount).map { $0.organism.id })
+
+        // Update visual highlighting
+        for organism in organisms {
+            if let node = organismNodes[organism.id] {
+                if elites.contains(organism.id) {
+                    // Elite organism - add golden glow
+                    node.strokeColor = .yellow
+                    node.lineWidth = 2
+                    node.glowWidth = 10
+
+                    // Add subtle pulsing animation if not already present
+                    if node.action(forKey: "elitePulse") == nil {
+                        let scaleUp = SKAction.scale(to: 1.1, duration: 0.5)
+                        let scaleDown = SKAction.scale(to: 1.0, duration: 0.5)
+                        let pulse = SKAction.sequence([scaleUp, scaleDown])
+                        let forever = SKAction.repeatForever(pulse)
+                        node.run(forever, withKey: "elitePulse")
+                    }
+                } else {
+                    // Regular organism - remove highlighting
+                    if node.action(forKey: "elitePulse") != nil {
+                        node.removeAction(forKey: "elitePulse")
+                        node.setScale(1.0)
+                    }
+                    node.strokeColor = .clear
+                    node.lineWidth = 0
+                    node.glowWidth = 0
+                }
+            }
+        }
+    }
+
+    private func calculateFitness(for organism: Organism) -> Double {
+        // Multi-factor fitness calculation based on current environment
+        var fitness = 0.0
+
+        // Speed contribution (normalized)
+        let speedRatio = Double(organism.speed - configuration.minSpeed) / Double(configuration.maxSpeed - configuration.minSpeed)
+
+        // Sense range contribution (normalized)
+        let senseRatio = Double(organism.senseRange - configuration.minSenseRange) / Double(configuration.maxSenseRange - configuration.minSenseRange)
+
+        // Size contribution (normalized)
+        let sizeRatio = (organism.size - configuration.minSize) / (configuration.maxSize - configuration.minSize)
+
+        // Fertility contribution (normalized)
+        let fertilityRatio = (organism.fertility - configuration.minFertility) / (configuration.maxFertility - configuration.minFertility)
+
+        // Adjust weights based on current food pattern
+        switch currentFoodPattern {
+        case .random:
+            // Balanced traits are best, fertility moderately important
+            fitness = speedRatio * 0.35 + senseRatio * 0.25 + (1.0 - abs(sizeRatio - 0.5) * 2) * 0.25 + fertilityRatio * 0.15
+
+        case .clustered:
+            // Size matters most, fertility helps dominate clusters
+            fitness = speedRatio * 0.15 + senseRatio * 0.25 + sizeRatio * 0.4 + fertilityRatio * 0.2
+
+        case .scattered:
+            // Speed and sense range, fertility less important when spread out
+            fitness = speedRatio * 0.45 + senseRatio * 0.35 + (1.0 - sizeRatio) * 0.1 + fertilityRatio * 0.1
+
+        case .ring:
+            // Sense range is king, fertility moderately important
+            fitness = speedRatio * 0.15 + senseRatio * 0.5 + (1.0 - abs(sizeRatio - 0.5) * 2) * 0.2 + fertilityRatio * 0.15
+        }
+
+        // Bonus for high generation (successful lineage)
+        let generationBonus = min(0.2, Double(organism.generation) * 0.01)
+        fitness += generationBonus
+
+        // Bonus if organism has eaten today (immediate success)
+        if organism.hasFoodToday {
+            fitness *= 1.2
+        }
+
+        return fitness
+    }
+
     // MARK: - Animations
     private func showDayTransition() {
-        // Create day transition label
-        let label = SKLabelNode(text: "Day \(currentDay)")
+        // Population health indicator
+        let populationHealth = getPopulationHealth()
+        let healthColor = getHealthColor(health: populationHealth)
+        let healthEmoji = getHealthEmoji(health: populationHealth)
+
+        // Create day transition label with health indicator
+        let label = SKLabelNode(text: "Day \(currentDay) \(healthEmoji)")
         label.fontName = "Helvetica-Bold"
         label.fontSize = 48
-        label.fontColor = .white
+        label.fontColor = healthColor
         label.position = CGPoint(x: size.width / 2, y: size.height / 2)
         label.zPosition = 1000
         label.alpha = 0
         label.setScale(0.3)
 
+        // Add population info
+        let popLabel = SKLabelNode(text: "Population: \(statistics.population)")
+        popLabel.fontName = "Helvetica"
+        popLabel.fontSize = 20
+        popLabel.fontColor = .white
+        popLabel.position = CGPoint(x: size.width / 2, y: size.height / 2 - 50)
+        popLabel.zPosition = 1000
+        popLabel.alpha = 0
+
         addChild(label)
+        addChild(popLabel)
 
         // Create dramatic entrance with multiple effects
         let fadeIn = SKAction.fadeIn(withDuration: 0.4)
@@ -495,9 +844,60 @@ class GameScene: SKScene {
         let sequence = SKAction.sequence([entrance, wait, exit, remove])
 
         label.run(sequence)
+        popLabel.run(sequence)
 
         // Add expanding circle effect
         addDayTransitionRing(at: CGPoint(x: size.width / 2, y: size.height / 2))
+    }
+
+    private func getPopulationHealth() -> Double {
+        // Calculate population health based on multiple factors
+        let population = Double(statistics.population)
+        let births = Double(statistics.births)
+        let deaths = Double(statistics.deaths)
+
+        // Ideal population range
+        let idealMin: Double = 15
+        let idealMax: Double = 40
+
+        // Population size factor
+        let popFactor: Double
+        if population < idealMin {
+            popFactor = population / idealMin  // 0-1 when below ideal
+        } else if population > idealMax {
+            popFactor = max(0.5, 1.0 - (population - idealMax) / idealMax)  // Penalty for overpopulation
+        } else {
+            popFactor = 1.0  // Optimal
+        }
+
+        // Birth/death ratio
+        let totalChange = births + deaths
+        let growthFactor = totalChange > 0 ? births / totalChange : 0.5
+
+        // Combine factors
+        return (popFactor + growthFactor) / 2.0
+    }
+
+    private func getHealthColor(health: Double) -> SKColor {
+        if health > 0.7 {
+            return .green
+        } else if health > 0.4 {
+            return .yellow
+        } else {
+            return .red
+        }
+    }
+
+    private func getHealthEmoji(health: Double) -> String {
+        if health > 0.8 {
+            return "🌟"  // Thriving
+        } else if health > 0.6 {
+            return "✨"  // Healthy
+        } else if health > 0.4 {
+            return "⚠️"  // Warning
+        } else {
+            return "💀"  // Critical
+        }
     }
 
     private func showDramaticReproduction(parent: Organism, child: Organism, childPosition: CGPoint) {
@@ -1070,6 +1470,15 @@ struct GameStatistics {
     var averageSpeed: Double = 0.0
     var minSpeed: Int = 0
     var maxSpeed: Int = 0
+    var averageSenseRange: Double = 0.0
+    var minSenseRange: Int = 0
+    var maxSenseRange: Int = 0
+    var averageSize: Double = 0.0
+    var minSize: Double = 0.0
+    var maxSize: Double = 0.0
+    var averageFertility: Double = 0.0
+    var minFertility: Double = 0.0
+    var maxFertility: Double = 0.0
     var births: Int = 0
     var deaths: Int = 0
     var organisms: [OrganismInfo] = []
@@ -1079,6 +1488,9 @@ struct GameStatistics {
 struct OrganismInfo: Identifiable {
     let id: UUID
     let speed: Int
+    let senseRange: Int
+    let size: Double
+    let fertility: Double
     let generation: Int
     let hasFoodToday: Bool
 }
