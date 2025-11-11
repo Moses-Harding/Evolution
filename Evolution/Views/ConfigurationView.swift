@@ -105,7 +105,7 @@ struct ConfigurationView: View {
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
-
+/*
                 Section(header: Text("Display Settings")) {
                     HStack {
                         Text("Organism Size")
@@ -114,7 +114,7 @@ struct ConfigurationView: View {
                             .frame(width: 30)
                     }
                 }
-
+*/
                 Section {
                     Button(action: { showingPresets = true }) {
                         HStack {
