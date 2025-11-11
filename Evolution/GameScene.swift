@@ -18,6 +18,7 @@ class GameScene: SKScene {
     private var food: [Food] = []
     private var obstacles: [Obstacle] = []
     private var temperatureZones: [TemperatureZone] = []
+    private var terrainPatches: [TerrainPatch] = []
     private var organismNodes: [UUID: SKShapeNode] = [:]
     private var senseRangeNodes: [UUID: SKShapeNode] = [:]  // Visual sense range indicators
     private var energyBarNodes: [UUID: (background: SKShapeNode, bar: SKShapeNode)] = [:]  // Energy bars
@@ -25,6 +26,7 @@ class GameScene: SKScene {
     private var foodNodes: [UUID: SKShapeNode] = [:]
     private var obstacleNodes: [UUID: SKShapeNode] = [:]
     private var temperatureZoneNodes: [UUID: SKShapeNode] = [:]
+    private var terrainNodes: [UUID: SKShapeNode] = [:]
     private var corpsePositions: [CGPoint] = []  // Store positions of dead organisms
 
     // Selection
@@ -89,6 +91,7 @@ class GameScene: SKScene {
         setupInitialPopulation()
         spawnFood()
         spawnTemperatureZones()
+        spawnTerrainPatches()
         setupDayNightOverlay()
         updateStatistics()
         showLegend()
@@ -562,6 +565,74 @@ class GameScene: SKScene {
         label.run(sequence)
     }
 
+    // MARK: - Terrain Management
+    private func spawnTerrainPatches() {
+        // Clear old terrain
+        for node in terrainNodes.values {
+            node.removeFromParent()
+        }
+        terrainPatches.removeAll()
+        terrainNodes.removeAll()
+
+        // Use playable bounds
+        let minX = playableMinX > 0 ? playableMinX : 30
+        let maxX = playableMaxX > minX ? playableMaxX : size.width - 30
+        let minY = playableMinY > 0 ? playableMinY : 30
+        let maxY = playableMaxY > minY ? playableMaxY : size.height - 30
+
+        // Create 3-5 terrain patches of various types
+        let patchCount = Int.random(in: 3...5)
+
+        for _ in 0..<patchCount {
+            let randomX = CGFloat.random(in: minX...maxX)
+            let randomY = CGFloat.random(in: minY...maxY)
+            let width = CGFloat.random(in: 80...180)
+            let height = CGFloat.random(in: 80...180)
+
+            // Random terrain type (excluding grass which is default)
+            let nonGrassTypes: [TerrainType] = [.sand, .water, .mud, .rock]
+            let randomType = nonGrassTypes.randomElement() ?? .sand
+
+            let patch = TerrainPatch(
+                position: CGPoint(x: randomX, y: randomY),
+                size: CGSize(width: width, height: height),
+                type: randomType
+            )
+
+            addTerrainPatch(patch)
+        }
+    }
+
+    private func addTerrainPatch(_ patch: TerrainPatch) {
+        terrainPatches.append(patch)
+
+        // Create visual node for terrain patch
+        let node = SKShapeNode(rectOf: patch.size, cornerRadius: 10)
+        node.fillColor = patch.type.color
+        node.strokeColor = patch.type.strokeColor
+        node.lineWidth = 2
+        node.position = patch.position
+        node.zPosition = 0.3  // Below temperature zones but above background
+
+        terrainNodes[patch.id] = node
+        addChild(node)
+    }
+
+    private func getTerrainSpeedMultiplier(at position: CGPoint) -> Double {
+        // Check all terrain patches at this position
+        // If multiple patches overlap, use the most restrictive (lowest) multiplier
+        var lowestMultiplier = 1.0
+
+        for patch in terrainPatches {
+            let multiplier = patch.speedMultiplierAt(position: position)
+            if multiplier < lowestMultiplier {
+                lowestMultiplier = multiplier
+            }
+        }
+
+        return lowestMultiplier
+    }
+
     // MARK: - Temperature Zone Management
     private func spawnTemperatureZones() {
         // Clear old zones
@@ -745,7 +816,8 @@ class GameScene: SKScene {
             // Move towards target food
             if let target = organism.targetFood, !organism.hasFoodToday {
                 let oldPosition = organism.position
-                let (var newPosition, energyCost) = organism.move(towards: target.position, deltaTime: deltaTime)
+                let terrainMultiplier = getTerrainSpeedMultiplier(at: organism.position)
+                let (var newPosition, energyCost) = organism.move(towards: target.position, deltaTime: deltaTime, terrainMultiplier: terrainMultiplier)
 
                 // Clamp to playable bounds
                 newPosition.x = max(playableMinX, min(playableMaxX, newPosition.x))

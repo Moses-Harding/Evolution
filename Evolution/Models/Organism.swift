@@ -128,24 +128,29 @@ class Organism: Identifiable, Equatable {
     }
 
     // Calculate movement for this frame
-    func move(towards target: CGPoint, deltaTime: TimeInterval) -> (newPosition: CGPoint, energyCost: Double) {
+    func move(towards target: CGPoint, deltaTime: TimeInterval, terrainMultiplier: Double = 1.0) -> (newPosition: CGPoint, energyCost: Double) {
         let dx = target.x - position.x
         let dy = target.y - position.y
         let distance = sqrt(dx * dx + dy * dy)
 
-        if distance < CGFloat(effectiveSpeed) * CGFloat(deltaTime) {
+        // Apply terrain modifier to effective speed
+        let modifiedSpeed = effectiveSpeed * terrainMultiplier
+
+        if distance < CGFloat(modifiedSpeed) * CGFloat(deltaTime) {
             // Calculate energy cost for actual distance moved
             let actualDistance = distance
             let energyCost = Double(actualDistance) * configuration.energyCostPerMove / energyEfficiency
             return (target, energyCost)  // Reached target
         }
 
-        let moveDistance = CGFloat(effectiveSpeed) * CGFloat(deltaTime)
+        let moveDistance = CGFloat(modifiedSpeed) * CGFloat(deltaTime)
         let moveX = (dx / distance) * moveDistance
         let moveY = (dy / distance) * moveDistance
 
         // Calculate energy cost based on distance moved and efficiency
-        let energyCost = Double(moveDistance) * configuration.energyCostPerMove / energyEfficiency
+        // Difficult terrain costs more energy (inverse of speed multiplier)
+        let terrainEnergyCost = 2.0 - terrainMultiplier  // 1.0 for normal, up to 2.0 for difficult
+        let energyCost = Double(moveDistance) * configuration.energyCostPerMove * terrainEnergyCost / energyEfficiency
 
         return (CGPoint(x: position.x + moveX, y: position.y + moveY), energyCost)
     }
