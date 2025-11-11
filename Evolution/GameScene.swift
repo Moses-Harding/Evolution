@@ -19,6 +19,7 @@ class GameScene: SKScene {
     private var obstacles: [Obstacle] = []
     private var temperatureZones: [TemperatureZone] = []
     private var terrainPatches: [TerrainPatch] = []
+    private var species: [UUID: Species] = [:]  // Track all species by ID
     private var organismNodes: [UUID: SKShapeNode] = [:]
     private var senseRangeNodes: [UUID: SKShapeNode] = [:]  // Visual sense range indicators
     private var energyBarNodes: [UUID: (background: SKShapeNode, bar: SKShapeNode)] = [:]  // Energy bars
@@ -245,6 +246,8 @@ class GameScene: SKScene {
 
             let randomX = CGFloat.random(in: minX...max(minX + 1, maxX))
             let randomY = CGFloat.random(in: minY...max(minY + 1, maxY))
+
+            // Create founder organism (each starts its own species)
             let organism = Organism(
                 speed: configuration.initialSpeed,
                 senseRange: configuration.initialSenseRange,
@@ -261,6 +264,9 @@ class GameScene: SKScene {
                 generation: 0,
                 configuration: configuration
             )
+
+            // Create species for this organism
+            registerSpecies(for: organism, foundedOnDay: 0)
             addOrganism(organism)
         }
     }
@@ -655,6 +661,68 @@ class GameScene: SKScene {
         let sequence = SKAction.sequence([entrance, wait, exit, remove])
 
         label.run(sequence)
+    }
+
+    // MARK: - Species Management
+    private func registerSpecies(for organism: Organism, foundedOnDay: Int) {
+        // Check if species already exists
+        if species[organism.speciesId] == nil {
+            // Create new species
+            let color = Species.generateColor(for: organism.speciesId)
+            let traits = "\(organism.speed)-\(organism.senseRange)-\(Int(organism.size * 10))"
+            let name = Species.generateName(generation: organism.generation, traits: traits)
+
+            let newSpecies = Species(
+                id: organism.speciesId,
+                founderId: organism.id,
+                name: name,
+                color: color,
+                foundedOnDay: foundedOnDay
+            )
+
+            species[organism.speciesId] = newSpecies
+        }
+
+        // Update population count
+        species[organism.speciesId]?.population += 1
+    }
+
+    private func updateSpeciesPopulations() {
+        // Reset all populations
+        for speciesId in species.keys {
+            species[speciesId]?.population = 0
+        }
+
+        // Count organisms in each species
+        for organism in organisms {
+            species[organism.speciesId]?.population += 1
+        }
+
+        // Mark extinct species
+        for (speciesId, speciesData) in species {
+            if speciesData.population == 0 && !speciesData.isExtinct {
+                species[speciesId]?.extinctOnDay = currentDay
+            }
+        }
+    }
+
+    private func detectSpeciation(parent: Organism, child: Organism) -> Bool {
+        guard configuration.speciationEnabled else { return false }
+
+        // Check if child has diverged enough to form new species
+        let distance = child.geneticDistance(to: parent)
+
+        // If genetic distance exceeds threshold, child founds a new species
+        if distance >= configuration.speciationThreshold {
+            // Assign new species ID to child (child becomes founder)
+            return true
+        }
+
+        return false
+    }
+
+    private func getSpeciesColor(for organism: Organism) -> SKColor {
+        return species[organism.speciesId]?.color ?? Species.generateColor(for: organism.speciesId)
     }
 
     // MARK: - Terrain Management
@@ -1221,7 +1289,17 @@ class GameScene: SKScene {
                     y: max(playableMinY, min(playableMaxY, childPosition.y))
                 )
 
-                let child = organism.reproduce(at: clampedPosition)
+                var child = organism.reproduce(at: clampedPosition)
+
+                // Check for speciation - if child diverged enough, it founds a new species
+                if detectSpeciation(parent: organism, child: child) {
+                    // Child becomes founder of new species
+                    child.speciesId = child.id
+                    registerSpecies(for: child, foundedOnDay: currentDay)
+                } else {
+                    // Child inherits parent's species
+                    registerSpecies(for: child, foundedOnDay: currentDay)
+                }
 
                 // Show dramatic reproduction with buildup -> POP -> split
                 showDramaticReproduction(parent: organism, child: child, childPosition: clampedPosition)
@@ -1297,8 +1375,8 @@ class GameScene: SKScene {
 
         // Create organism visual node (size-based radius)
         let node = SKShapeNode(circleOfRadius: CGFloat(organism.effectiveRadius))
-        let color = organism.color
-        node.fillColor = SKColor(red: CGFloat(color.red), green: CGFloat(color.green), blue: CGFloat(color.blue), alpha: 1.0)
+        let speciesColor = getSpeciesColor(for: organism)
+        node.fillColor = speciesColor
         node.strokeColor = .clear
         node.position = organism.position
         node.zPosition = 10
@@ -1545,6 +1623,9 @@ class GameScene: SKScene {
     private func updateStatistics() {
         statistics.currentDay = currentDay
         statistics.population = organisms.count
+
+        // Update species populations and mark extinct species
+        updateSpeciesPopulations()
 
         if organisms.isEmpty {
             statistics.averageSpeed = 0.0

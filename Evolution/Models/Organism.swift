@@ -28,9 +28,10 @@ class Organism: Identifiable, Equatable {
     var hasFoodToday: Bool
     var targetFood: Food?
     var generation: Int
+    var speciesId: UUID  // Identifies which species this organism belongs to
     let configuration: GameConfiguration
 
-    init(id: UUID = UUID(), speed: Int, senseRange: Int, size: Double, fertility: Double, energyEfficiency: Double, maxAge: Int, aggression: Double, defense: Double, metabolism: Double, heatTolerance: Double, coldTolerance: Double, position: CGPoint, energy: Double? = nil, age: Int = 0, generation: Int = 0, configuration: GameConfiguration = .default) {
+    init(id: UUID = UUID(), speed: Int, senseRange: Int, size: Double, fertility: Double, energyEfficiency: Double, maxAge: Int, aggression: Double, defense: Double, metabolism: Double, heatTolerance: Double, coldTolerance: Double, position: CGPoint, energy: Double? = nil, age: Int = 0, generation: Int = 0, speciesId: UUID? = nil, configuration: GameConfiguration = .default) {
         self.id = id
         self.configuration = configuration
         self.speed = max(configuration.minSpeed, min(configuration.maxSpeed, speed))
@@ -50,6 +51,88 @@ class Organism: Identifiable, Equatable {
         self.hasFoodToday = false
         self.targetFood = nil
         self.generation = generation
+        self.speciesId = speciesId ?? id  // If no species ID provided, this is the founder of a new species
+    }
+
+    // Calculate genetic distance to another organism (0.0 = identical, 1.0 = maximum difference)
+    func geneticDistance(to other: Organism) -> Double {
+        // Normalize each trait difference to 0-1 range, then average
+        var totalDistance = 0.0
+        var traitCount = 0
+
+        // Speed distance
+        let speedRange = Double(configuration.maxSpeed - configuration.minSpeed)
+        if speedRange > 0 {
+            totalDistance += abs(Double(speed - other.speed)) / speedRange
+            traitCount += 1
+        }
+
+        // Sense range distance
+        let senseRange = Double(configuration.maxSenseRange - configuration.minSenseRange)
+        if senseRange > 0 {
+            totalDistance += abs(Double(self.senseRange - other.senseRange)) / senseRange
+            traitCount += 1
+        }
+
+        // Size distance
+        let sizeRange = configuration.maxSize - configuration.minSize
+        if sizeRange > 0 {
+            totalDistance += abs(size - other.size) / sizeRange
+            traitCount += 1
+        }
+
+        // Fertility distance
+        let fertilityRange = configuration.maxFertility - configuration.minFertility
+        if fertilityRange > 0 {
+            totalDistance += abs(fertility - other.fertility) / fertilityRange
+            traitCount += 1
+        }
+
+        // Energy efficiency distance
+        let efficiencyRange = configuration.maxEnergyEfficiency - configuration.minEnergyEfficiency
+        if efficiencyRange > 0 {
+            totalDistance += abs(energyEfficiency - other.energyEfficiency) / efficiencyRange
+            traitCount += 1
+        }
+
+        // Max age distance
+        let maxAgeRange = Double(configuration.maxMaxAge - configuration.minMaxAge)
+        if maxAgeRange > 0 {
+            totalDistance += abs(Double(maxAge - other.maxAge)) / maxAgeRange
+            traitCount += 1
+        }
+
+        // Aggression distance
+        totalDistance += abs(aggression - other.aggression)
+        traitCount += 1
+
+        // Defense distance
+        totalDistance += abs(defense - other.defense)
+        traitCount += 1
+
+        // Metabolism distance
+        let metabolismRange = configuration.maxMetabolism - configuration.minMetabolism
+        if metabolismRange > 0 {
+            totalDistance += abs(metabolism - other.metabolism) / metabolismRange
+            traitCount += 1
+        }
+
+        // Heat tolerance distance
+        totalDistance += abs(heatTolerance - other.heatTolerance)
+        traitCount += 1
+
+        // Cold tolerance distance
+        totalDistance += abs(coldTolerance - other.coldTolerance)
+        traitCount += 1
+
+        return traitCount > 0 ? totalDistance / Double(traitCount) : 0.0
+    }
+
+    // Check if this organism can reproduce with another (based on genetic distance)
+    func canReproduceWith(_ other: Organism) -> Bool {
+        let distance = geneticDistance(to: other)
+        // If genetic distance exceeds threshold, they are different species and cannot reproduce
+        return distance < configuration.speciationThreshold
     }
 
     // Reproduction with mutation
@@ -103,6 +186,7 @@ class Organism: Identifiable, Equatable {
             energy: configuration.initialEnergy * 0.8,  // Start with 80% energy
             age: 0,
             generation: generation + 1,
+            speciesId: speciesId,  // Inherit parent's species ID
             configuration: configuration
         )
     }

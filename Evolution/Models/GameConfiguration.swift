@@ -122,6 +122,10 @@ struct GameConfiguration {
     var winterTemperatureOffset: Double = -8.0  // 8 degrees colder in winter
     var summerTemperatureOffset: Double = 6.0  // 6 degrees warmer in summer
 
+    // MARK: - Species & Genetics
+    var speciationThreshold: Double = 0.35  // Genetic distance threshold for speciation (0.0-1.0)
+    var speciationEnabled: Bool = true
+
     // MARK: - Presets
     static let `default` = GameConfiguration()
 
