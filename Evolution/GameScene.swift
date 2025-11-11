@@ -22,9 +22,8 @@ class GameScene: SKScene {
     private var foodNodes: [UUID: SKShapeNode] = [:]
     private var corpsePositions: [CGPoint] = []  // Store positions of dead organisms
 
-    // Selection and stats display
+    // Selection
     private var selectedOrganismId: UUID?
-    private var statsPanel: SKNode?
     private var selectionIndicator: SKShapeNode?
 
     private var currentDay: Int = 0
@@ -112,16 +111,6 @@ class GameScene: SKScene {
             let legendX = newSize.width - safeAreaInsets.right - 120
             let legendY = newSize.height - safeAreaInsets.top - 80
             legend.position = CGPoint(x: legendX, y: legendY)
-        }
-
-        // Update stats panel position if visible (using safe area aware bounds)
-        if let statsPanel = self.statsPanel {
-            let panelWidth: CGFloat = 300
-            let panelHeight: CGFloat = 400
-            // Keep panel within playable bounds which now includes safe area
-            let panelX = min(playableMaxX - panelWidth / 2, max(playableMinX + panelWidth / 2, statsPanel.position.x))
-            let panelY = min(playableMaxY - panelHeight / 2, max(playableMinY + panelHeight / 2, statsPanel.position.y))
-            statsPanel.position = CGPoint(x: panelX, y: panelY)
         }
 
         // Reposition any organisms that are now out of bounds
@@ -427,8 +416,12 @@ class GameScene: SKScene {
             checkCollisions()
         }
 
-        // Update selection indicator to follow selected organism
-        updateSelectionIndicator()
+        // Update selection indicator position
+        if let selectedId = selectedOrganismId,
+           let organism = organisms.first(where: { $0.id == selectedId }),
+           let indicator = selectionIndicator {
+            indicator.position = organism.position
+        }
     }
 
     private func shouldEndDay() -> Bool {
@@ -1727,9 +1720,6 @@ class GameScene: SKScene {
 
         selectionIndicator = indicator
         addChild(indicator)
-
-        // Show stats panel
-        showStatsPanel(for: organism)
     }
 
     private func deselectOrganism() {
@@ -1738,152 +1728,6 @@ class GameScene: SKScene {
         // Remove selection indicator
         selectionIndicator?.removeFromParent()
         selectionIndicator = nil
-
-        // Remove stats panel
-        statsPanel?.removeFromParent()
-        statsPanel = nil
-    }
-
-    private func showStatsPanel(for organism: Organism) {
-        // Remove old stats panel if exists
-        statsPanel?.removeFromParent()
-
-        // Create container for stats
-        let panel = SKNode()
-        panel.zPosition = 2000
-
-        // Position panel near organism but within screen bounds
-        var panelX = organism.position.x + 80
-        var panelY = organism.position.y
-
-        // Keep panel on screen
-        let panelWidth: CGFloat = 200
-        let panelHeight: CGFloat = 200
-
-        if panelX + panelWidth / 2 > size.width - 20 {
-            panelX = organism.position.x - 80
-        }
-        if panelY + panelHeight / 2 > size.height - 20 {
-            panelY = size.height - panelHeight / 2 - 20
-        }
-        if panelY - panelHeight / 2 < 20 {
-            panelY = panelHeight / 2 + 20
-        }
-
-        panel.position = CGPoint(x: panelX, y: panelY)
-
-        // Create background
-        let background = SKShapeNode(rectOf: CGSize(width: panelWidth, height: panelHeight), cornerRadius: 10)
-        background.fillColor = SKColor(white: 0.1, alpha: 0.9)
-        background.strokeColor = .white
-        background.lineWidth = 2
-        background.glowWidth = 5
-        panel.addChild(background)
-
-        // Create stats labels
-        let fontSize: CGFloat = 14
-        let lineHeight: CGFloat = 18
-        var yOffset: CGFloat = panelHeight / 2 - 20
-
-        // Helper function to add a label
-        func addLabel(text: String) {
-            let label = SKLabelNode(text: text)
-            label.fontName = "Courier"
-            label.fontSize = fontSize
-            label.fontColor = .white
-            label.horizontalAlignmentMode = .left
-            label.position = CGPoint(x: -panelWidth / 2 + 10, y: yOffset)
-            panel.addChild(label)
-            yOffset -= lineHeight
-        }
-
-        // Add title
-        let titleLabel = SKLabelNode(text: "ORGANISM STATS")
-        titleLabel.fontName = "Courier-Bold"
-        titleLabel.fontSize = 16
-        titleLabel.fontColor = .cyan
-        titleLabel.horizontalAlignmentMode = .center
-        titleLabel.position = CGPoint(x: 0, y: yOffset)
-        panel.addChild(titleLabel)
-        yOffset -= lineHeight + 5
-
-        // Add separator
-        let separator1 = SKShapeNode(rectOf: CGSize(width: panelWidth - 20, height: 1))
-        separator1.fillColor = .gray
-        separator1.strokeColor = .clear
-        separator1.position = CGPoint(x: 0, y: yOffset)
-        panel.addChild(separator1)
-        yOffset -= 10
-
-        // Add stats
-        addLabel(text: "ID: \(String(organism.id.uuidString.prefix(8)))...")
-        addLabel(text: "Generation: \(organism.generation)")
-        yOffset -= 5
-
-        addLabel(text: "Speed: \(organism.speed)")
-        addLabel(text: "Eff. Speed: \(String(format: "%.1f", organism.effectiveSpeed))")
-        addLabel(text: "Sense Range: \(organism.senseRange)")
-        addLabel(text: "Size: \(String(format: "%.2f", organism.size))")
-        addLabel(text: "Fertility: \(String(format: "%.2f", organism.fertility))")
-        yOffset -= 5
-
-        addLabel(text: "Has Food: \(organism.hasFoodToday ? "Yes ✓" : "No")")
-
-        // Add separator
-        let separator2 = SKShapeNode(rectOf: CGSize(width: panelWidth - 20, height: 1))
-        separator2.fillColor = .gray
-        separator2.strokeColor = .clear
-        separator2.position = CGPoint(x: 0, y: yOffset)
-        panel.addChild(separator2)
-        yOffset -= 10
-
-        // Add fitness info
-        let fitness = calculateFitness(for: organism)
-        addLabel(text: "Fitness: \(String(format: "%.2f", fitness))")
-
-        // Calculate rank
-        let sortedOrganisms = organisms.sorted { calculateFitness(for: $0) > calculateFitness(for: $1) }
-        if let rank = sortedOrganisms.firstIndex(where: { $0.id == organism.id }) {
-            addLabel(text: "Rank: \(rank + 1)/\(organisms.count)")
-        }
-
-        // Add close instruction
-        yOffset = -panelHeight / 2 + 15
-        let closeLabel = SKLabelNode(text: "Tap to close")
-        closeLabel.fontName = "Courier"
-        closeLabel.fontSize = 11
-        closeLabel.fontColor = .gray
-        closeLabel.horizontalAlignmentMode = .center
-        closeLabel.position = CGPoint(x: 0, y: yOffset)
-        panel.addChild(closeLabel)
-
-        // Fade in animation
-        panel.alpha = 0
-        panel.setScale(0.8)
-        let fadeIn = SKAction.fadeIn(withDuration: 0.2)
-        let scaleUp = SKAction.scale(to: 1.0, duration: 0.2)
-        let group = SKAction.group([fadeIn, scaleUp])
-        panel.run(group)
-
-        statsPanel = panel
-        addChild(panel)
-    }
-
-    private func updateSelectionIndicator() {
-        // Update position of selection indicator if organism still exists
-        guard let selectedId = selectedOrganismId,
-              let organism = organisms.first(where: { $0.id == selectedId }),
-              let indicator = selectionIndicator else {
-            return
-        }
-
-        indicator.position = organism.position
-
-        // Update stats panel if it exists
-        if statsPanel != nil {
-            // Remove and recreate stats panel to update values
-            showStatsPanel(for: organism)
-        }
     }
 }
 

@@ -208,10 +208,11 @@ struct OrganismStatsModal: View {
                 VStack(alignment: .leading, spacing: 12) {
                     StatRow(label: "ID", value: String(organism.id.uuidString.prefix(8)))
                     StatRow(label: "Generation", value: "\(organism.generation)")
-                    StatRow(label: "Speed", value: String(format: "%.1f", organism.speed))
-                    StatRow(label: "Sense Range", value: String(format: "%.0f", organism.senseRange))
-                    StatRow(label: "Size", value: String(format: "%.1f", organism.size))
-                    StatRow(label: "Fertility", value: String(format: "%.0f%%", organism.fertility * 100))
+                    StatRow(label: "Speed", value: "\(organism.speed)")
+                    StatRow(label: "Effective Speed", value: String(format: "%.1f", organism.effectiveSpeed))
+                    StatRow(label: "Sense Range", value: "\(organism.senseRange)")
+                    StatRow(label: "Size", value: String(format: "%.2f", organism.size))
+                    StatRow(label: "Fertility", value: String(format: "%.1f%%", organism.fertility * 100))
                     StatRow(label: "Has Food Today", value: organism.hasFoodToday ? "Yes ✓" : "No ✗")
                         .foregroundColor(organism.hasFoodToday ? .green : .red)
 
