@@ -133,6 +133,27 @@ struct GameConfiguration {
     var senseEnergyTradeoff: Double = 0.00015  // Larger sense range increases energy cost
     var aggressionDefenseTradeoff: Double = 0.6  // Aggression reduces defense capability
 
+    // MARK: - Spontaneous Mutation System
+    var spontaneousMutationEnabled: Bool = true
+
+    // Mutation magnitude variation (probability of larger-than-normal mutations)
+    var largeMutationProbability: Double = 0.02  // 2% chance of 3-5x larger mutation
+    var massiveMutationProbability: Double = 0.002  // 0.2% chance of 8-12x larger mutation
+    var largeMutationMultiplierMin: Double = 3.0
+    var largeMutationMultiplierMax: Double = 5.0
+    var massiveMutationMultiplierMin: Double = 8.0
+    var massiveMutationMultiplierMax: Double = 12.0
+
+    // Spontaneous trait reset (complete re-randomization of a trait)
+    var traitResetProbability: Double = 0.005  // 0.5% chance per trait to completely reset
+
+    // Novel capability thresholds (for emergence detection)
+    var speedCapabilityThreshold: Int = 25  // Speed >= this is "exceptional speed"
+    var senseCapabilityThreshold: Int = 350  // Sense range >= this is "super perception"
+    var sizeCapabilityThreshold: Double = 1.8  // Size >= this is "giant"
+    var combatCapabilityThreshold: Double = 0.85  // Aggression or defense >= this is "warrior"
+    var efficiencyCapabilityThreshold: Double = 1.4  // Energy efficiency >= this is "ultra-efficient"
+
     // MARK: - Presets
     static let `default` = GameConfiguration()
 

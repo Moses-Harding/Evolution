@@ -78,10 +78,15 @@ class GameScene: SKScene {
 
     // MARK: - Statistics
     var statistics: GameStatistics = GameStatistics()
+    var evolutionaryRecords: EvolutionaryRecords = EvolutionaryRecords()
+    var lineageTracker: LineageTracker = LineageTracker()
+    var correlationAnalyzer: TraitCorrelationAnalyzer = TraitCorrelationAnalyzer()
 
     // MARK: - Publishers
     let statisticsPublisher = PassthroughSubject<GameStatistics, Never>()
     let selectedOrganismPublisher = PassthroughSubject<Organism?, Never>()
+    let milestonePublisher = PassthroughSubject<EvolutionaryMilestone, Never>()
+    let correlationPublisher = PassthroughSubject<TraitCorrelation, Never>()
 
     // MARK: - Initialization
     init(size: CGSize, configuration: GameConfiguration) {
@@ -303,6 +308,10 @@ class GameScene: SKScene {
 
             // Create species for this organism
             registerSpecies(for: organism, foundedOnDay: 0)
+
+            // Register lineage (initial organisms found their own lineages)
+            lineageTracker.registerOrganism(organism, parentId: nil, currentDay: 0)
+
             addOrganism(organism)
         }
     }
@@ -1742,11 +1751,21 @@ class GameScene: SKScene {
                     // Child becomes founder of new species
                     child.speciesId = child.id
                     registerSpecies(for: child, foundedOnDay: currentDay)
+
+                    // Child founds new lineage (speciation = new lineage)
+                    lineageTracker.registerOrganism(child, parentId: nil, currentDay: currentDay)
+
                     // Show speciation event label
                     showFloatingLabel(text: "NEW SPECIES!", at: clampedPosition, color: .magenta, fontSize: 16, offsetY: 50)
+
+                    // Check for first speciation milestone
+                    if let milestone = evolutionaryRecords.recordFirstSpeciation(day: currentDay, newSpeciesId: child.speciesId) {
+                        showMilestoneNotification(milestone: milestone)
+                    }
                 } else {
-                    // Child inherits parent's species
+                    // Child inherits parent's species and lineage
                     registerSpecies(for: child, foundedOnDay: currentDay)
+                    lineageTracker.registerOrganism(child, parentId: organism.id, currentDay: currentDay)
                 }
 
                 // Show dramatic reproduction with buildup -> POP -> split
@@ -1784,6 +1803,11 @@ class GameScene: SKScene {
                     showFloatingLabel(text: "OLD AGE", at: organism.position, color: .gray, fontSize: 12)
                     addCorpseMarker(at: organism.position, color: organism.color)
                     removeOrganism(organism, animated: true)
+
+                    // Check for longevity record
+                    if let milestone = evolutionaryRecords.recordLongevity(organism: organism, currentDay: currentDay) {
+                        showMilestoneNotification(milestone: milestone)
+                    }
                 } else {
                     // Starvation (didn't eat)
                     statistics.deathsByStarvation += 1
@@ -1791,6 +1815,10 @@ class GameScene: SKScene {
                     addCorpseMarker(at: organism.position, color: organism.color)
                     removeOrganism(organism, animated: true)
                 }
+
+                // Record death in lineage tracker
+                lineageTracker.recordDeath(organismId: organism.id, currentDay: currentDay)
+
                 return false
             } else {
                 return true
@@ -1802,7 +1830,47 @@ class GameScene: SKScene {
         // Update statistics
         statistics.births = births
         statistics.deaths = deaths
+        let previousPopulation = statistics.population + deaths - births  // Calculate previous population
         updateStatistics()
+
+        // Check for evolutionary milestones
+        let speciesCount = species.count
+        let newMilestones = evolutionaryRecords.checkRecords(
+            organisms: organisms,
+            currentDay: currentDay,
+            speciesCount: speciesCount
+        )
+
+        // Show notification for each new milestone
+        for milestone in newMilestones {
+            showMilestoneNotification(milestone: milestone)
+        }
+
+        // Update lineage dominance scores
+        lineageTracker.updateDominanceScores(totalPopulation: statistics.population, currentDay: currentDay)
+
+        // Analyze trait correlations periodically (every 10 days for performance)
+        if currentDay % 10 == 0 && organisms.count >= 20 {
+            let newCorrelations = correlationAnalyzer.analyzePopulation(organisms, currentDay: currentDay)
+            for correlation in newCorrelations {
+                correlationPublisher.send(correlation)
+                // Show notification for strong correlations
+                if correlation.strength == .veryStrong || correlation.strength == .strong {
+                    showCorrelationNotification(correlation: correlation)
+                }
+            }
+        }
+
+        // Check for mass extinction event
+        if deaths > 0 {
+            if let milestone = evolutionaryRecords.recordMassExtinction(
+                previousPopulation: previousPopulation,
+                newPopulation: statistics.population,
+                day: currentDay
+            ) {
+                showMilestoneNotification(milestone: milestone)
+            }
+        }
 
         print("DEBUG: Day ended - Births: \(births), Deaths: \(deaths), Survivors: \(survivors.count)")
     }
@@ -3156,6 +3224,185 @@ class GameScene: SKScene {
         addEnergyParticles(from: parentPosition, to: childPosition)
     }
 
+    // MARK: - Milestone Notifications
+
+    /// Shows a dramatic notification when an evolutionary milestone is achieved
+    private func showMilestoneNotification(milestone: EvolutionaryMilestone) {
+        // Publish milestone for UI
+        milestonePublisher.send(milestone)
+
+        // Determine notification color based on milestone type
+        let color = milestone.type.color
+        let skColor = colorFromString(color)
+
+        // Create main banner
+        let bannerHeight: CGFloat = 80
+        let banner = SKShapeNode(rectOf: CGSize(width: size.width * 0.8, height: bannerHeight), cornerRadius: 15)
+        banner.fillColor = skColor.withAlphaComponent(0.9)
+        banner.strokeColor = .white
+        banner.lineWidth = 3
+        banner.position = CGPoint(x: size.width / 2, y: size.height + bannerHeight)
+        banner.zPosition = 1100
+        banner.glowWidth = 5
+
+        // Add icon
+        let iconLabel = SKLabelNode(text: milestone.type.icon)
+        iconLabel.fontSize = 36
+        iconLabel.verticalAlignmentMode = .center
+        iconLabel.position = CGPoint(x: -size.width * 0.3, y: 0)
+        banner.addChild(iconLabel)
+
+        // Add title
+        let titleLabel = SKLabelNode(text: milestone.type.rawValue.uppercased())
+        titleLabel.fontName = "Helvetica-Bold"
+        titleLabel.fontSize = 22
+        titleLabel.fontColor = .white
+        titleLabel.verticalAlignmentMode = .center
+        titleLabel.horizontalAlignmentMode = .left
+        titleLabel.position = CGPoint(x: -size.width * 0.25, y: 8)
+        banner.addChild(titleLabel)
+
+        // Add description
+        let descLabel = SKLabelNode(text: milestone.description)
+        descLabel.fontName = "Helvetica"
+        descLabel.fontSize = 16
+        descLabel.fontColor = .white
+        descLabel.verticalAlignmentMode = .center
+        descLabel.horizontalAlignmentMode = .left
+        descLabel.position = CGPoint(x: -size.width * 0.25, y: -12)
+        banner.addChild(descLabel)
+
+        // Add day indicator
+        let dayLabel = SKLabelNode(text: "Day \(milestone.day)")
+        dayLabel.fontName = "Helvetica"
+        dayLabel.fontSize = 14
+        dayLabel.fontColor = .white
+        dayLabel.verticalAlignmentMode = .center
+        dayLabel.horizontalAlignmentMode = .right
+        dayLabel.position = CGPoint(x: size.width * 0.35, y: 0)
+        banner.addChild(dayLabel)
+
+        addChild(banner)
+
+        // Add celebratory sparkles
+        addMilestoneSparkles(at: CGPoint(x: size.width / 2, y: size.height * 0.75))
+
+        // Animate banner sliding down, staying briefly, then sliding up
+        let slideDown = SKAction.moveTo(y: size.height * 0.85, duration: 0.5)
+        slideDown.timingMode = .easeOut
+
+        let wait = SKAction.wait(forDuration: 3.0)
+
+        let slideUp = SKAction.moveTo(y: size.height + bannerHeight, duration: 0.5)
+        slideUp.timingMode = .easeIn
+
+        let remove = SKAction.removeFromParent()
+
+        let sequence = SKAction.sequence([slideDown, wait, slideUp, remove])
+        banner.run(sequence)
+
+        // Play celebratory sound (if implemented)
+        // run(SKAction.playSoundFileNamed("milestone.wav", waitForCompletion: false))
+    }
+
+    /// Helper to convert color string to SKColor
+    private func colorFromString(_ colorString: String) -> SKColor {
+        switch colorString {
+        case "gold": return SKColor(red: 1.0, green: 0.84, blue: 0.0, alpha: 1.0)
+        case "green": return SKColor(red: 0.0, green: 0.8, blue: 0.0, alpha: 1.0)
+        case "purple": return SKColor(red: 0.6, green: 0.2, blue: 0.8, alpha: 1.0)
+        case "blue": return SKColor(red: 0.2, green: 0.5, blue: 1.0, alpha: 1.0)
+        case "orange": return SKColor(red: 1.0, green: 0.6, blue: 0.0, alpha: 1.0)
+        case "red": return SKColor(red: 0.9, green: 0.2, blue: 0.2, alpha: 1.0)
+        case "cyan": return SKColor(red: 0.0, green: 0.8, blue: 0.9, alpha: 1.0)
+        case "magenta": return SKColor(red: 0.9, green: 0.2, blue: 0.9, alpha: 1.0)
+        default: return .white
+        }
+    }
+
+    /// Adds sparkles around milestone notification
+    private func addMilestoneSparkles(at position: CGPoint) {
+        for _ in 0..<20 {
+            let sparkle = SKShapeNode(circleOfRadius: CGFloat.random(in: 2...5))
+            sparkle.fillColor = .yellow
+            sparkle.strokeColor = .white
+            sparkle.lineWidth = 1
+            sparkle.position = position
+            sparkle.zPosition = 1099
+
+            // Random direction
+            let angle = Double.random(in: 0...(2 * .pi))
+            let distance = CGFloat.random(in: 50...150)
+            let targetX = position.x + cos(angle) * distance
+            let targetY = position.y + sin(angle) * distance
+
+            addChild(sparkle)
+
+            // Animate
+            let move = SKAction.move(to: CGPoint(x: targetX, y: targetY), duration: 1.0)
+            move.timingMode = .easeOut
+            let fade = SKAction.fadeOut(withDuration: 1.0)
+            let remove = SKAction.removeFromParent()
+
+            sparkle.run(SKAction.sequence([SKAction.group([move, fade]), remove]))
+        }
+    }
+
+    /// Shows notification when a significant trait correlation is discovered
+    private func showCorrelationNotification(correlation: TraitCorrelation) {
+        let isPositive = correlation.isPositive
+        let color = isPositive ? SKColor.green : SKColor.orange
+        let arrow = isPositive ? "↑↑" : "↑↓"
+
+        // Create notification banner
+        let bannerHeight: CGFloat = 60
+        let banner = SKShapeNode(rectOf: CGSize(width: size.width * 0.7, height: bannerHeight), cornerRadius: 10)
+        banner.fillColor = color.withAlphaComponent(0.85)
+        banner.strokeColor = .white
+        banner.lineWidth = 2
+        banner.position = CGPoint(x: size.width / 2, y: size.height + bannerHeight)
+        banner.zPosition = 1100
+
+        // Add icon
+        let iconLabel = SKLabelNode(text: correlation.strength.icon)
+        iconLabel.fontSize = 24
+        iconLabel.verticalAlignmentMode = .center
+        iconLabel.position = CGPoint(x: -size.width * 0.28, y: 0)
+        banner.addChild(iconLabel)
+
+        // Add title
+        let titleLabel = SKLabelNode(text: "TRAIT CORRELATION")
+        titleLabel.fontName = "Helvetica-Bold"
+        titleLabel.fontSize = 14
+        titleLabel.fontColor = .white
+        titleLabel.verticalAlignmentMode = .center
+        titleLabel.horizontalAlignmentMode = .left
+        titleLabel.position = CGPoint(x: -size.width * 0.23, y: 10)
+        banner.addChild(titleLabel)
+
+        // Add description
+        let descLabel = SKLabelNode(text: "\(correlation.trait1.rawValue) \(arrow) \(correlation.trait2.rawValue)")
+        descLabel.fontName = "Helvetica"
+        descLabel.fontSize = 16
+        descLabel.fontColor = .white
+        descLabel.verticalAlignmentMode = .center
+        descLabel.horizontalAlignmentMode = .left
+        descLabel.position = CGPoint(x: -size.width * 0.23, y: -10)
+        banner.addChild(descLabel)
+
+        addChild(banner)
+
+        // Animate
+        let slideDown = SKAction.moveTo(y: size.height * 0.90, duration: 0.4)
+        slideDown.timingMode = .easeOut
+        let wait = SKAction.wait(forDuration: 2.5)
+        let slideUp = SKAction.moveTo(y: size.height + bannerHeight, duration: 0.4)
+        slideUp.timingMode = .easeIn
+        let remove = SKAction.removeFromParent()
+
+        banner.run(SKAction.sequence([slideDown, wait, slideUp, remove]))
+    }
+
     // MARK: - Corpse Markers
     private func addCorpseMarker(at position: CGPoint, color: (red: Double, green: Double, blue: Double)) {
         // Create a cross/X marker for corpse
@@ -3187,49 +3434,102 @@ class GameScene: SKScene {
 
     // MARK: - Mutation Indicators
     private func showMutationIndicator(parent: Organism, child: Organism, at position: CGPoint) {
-        // Calculate mutation severity based on trait differences
-        let speedDiff = abs(Double(child.speed - parent.speed))
-        let sizeDiff = abs(child.size - parent.size)
-        let senseRangeDiff = abs(Double(child.senseRange - parent.senseRange))
+        // Check for spontaneous mutation events based on mutation multiplier
+        let mutationMultiplier = child.lastMutationMultiplier
 
-        // Normalize differences (approximate ranges)
-        let normalizedSpeedDiff = speedDiff / 2.0  // mutation range is ±0-2
-        let normalizedSizeDiff = sizeDiff / 0.2  // mutation range is ±0-0.2
-        let normalizedSenseDiff = senseRangeDiff / 20.0  // mutation range is ±0-20
+        // Classify mutation type
+        let (text, color, size, duration) = if mutationMultiplier >= configuration.massiveMutationMultiplierMin {
+            // Massive spontaneous mutation (very rare)
+            ("💥 MASSIVE MUTATION! 💥", SKColor.magenta, CGFloat(20), 3.0)
+        } else if mutationMultiplier >= configuration.largeMutationMultiplierMin {
+            // Large spontaneous mutation (rare)
+            ("⚡⚡⚡ LARGE MUTATION ⚡⚡⚡", SKColor.orange, CGFloat(16), 2.0)
+        } else {
+            // Normal mutation - use trait difference calculation
+            let speedDiff = abs(Double(child.speed - parent.speed))
+            let sizeDiff = abs(child.size - parent.size)
+            let senseRangeDiff = abs(Double(child.senseRange - parent.senseRange))
 
-        let totalMutation = (normalizedSpeedDiff + normalizedSizeDiff + normalizedSenseDiff) / 3.0
+            // Normalize differences (approximate ranges)
+            let normalizedSpeedDiff = speedDiff / 2.0  // mutation range is ±0-2
+            let normalizedSizeDiff = sizeDiff / 0.2  // mutation range is ±0-0.2
+            let normalizedSenseDiff = senseRangeDiff / 20.0  // mutation range is ±0-20
 
-        // Only show indicator if mutation is significant
-        if totalMutation > 0.3 {
-            let (text, color, size) = if totalMutation > 0.8 {
-                ("⚡⚡⚡", SKColor.magenta, CGFloat(16))  // Major mutation
-            } else if totalMutation > 0.5 {
-                ("⚡⚡", SKColor.orange, CGFloat(14))  // Moderate mutation
+            let totalMutation = (normalizedSpeedDiff + normalizedSizeDiff + normalizedSenseDiff) / 3.0
+
+            // Only show indicator if mutation is significant
+            if totalMutation > 0.3 {
+                if totalMutation > 0.8 {
+                    ("⚡⚡⚡", SKColor.magenta, CGFloat(16), 1.2)  // Major mutation
+                } else if totalMutation > 0.5 {
+                    ("⚡⚡", SKColor.orange, CGFloat(14), 1.0)  // Moderate mutation
+                } else {
+                    ("⚡", SKColor.yellow, CGFloat(12), 0.8)  // Minor mutation
+                }
             } else {
-                ("⚡", SKColor.yellow, CGFloat(12))  // Minor mutation
+                return  // No significant mutation to display
             }
-
-            // Create indicator
-            let label = SKLabelNode(text: text)
-            label.fontSize = size
-            label.position = CGPoint(x: position.x + 15, y: position.y + 10)
-            label.zPosition = 101
-            label.alpha = 0
-
-            addChild(label)
-
-            // Pulse and fade
-            let fadeIn = SKAction.fadeIn(withDuration: 0.2)
-            let pulse = SKAction.sequence([
-                SKAction.scale(to: 1.3, duration: 0.15),
-                SKAction.scale(to: 1.0, duration: 0.15)
-            ])
-            let wait = SKAction.wait(forDuration: 0.8)
-            let fadeOut = SKAction.fadeOut(withDuration: 0.3)
-            let remove = SKAction.removeFromParent()
-
-            label.run(SKAction.sequence([fadeIn, SKAction.group([pulse, wait]), fadeOut, remove]))
         }
+
+        // Create indicator
+        let label = SKLabelNode(text: text)
+        label.fontSize = size
+        label.fontColor = color
+        label.position = CGPoint(x: position.x, y: position.y + 20)
+        label.zPosition = 101
+        label.alpha = 0
+
+        addChild(label)
+
+        // Pulse and fade (more dramatic for spontaneous mutations)
+        let fadeIn = SKAction.fadeIn(withDuration: 0.2)
+        let pulse = SKAction.sequence([
+            SKAction.scale(to: 1.3, duration: 0.15),
+            SKAction.scale(to: 1.0, duration: 0.15)
+        ])
+        let wait = SKAction.wait(forDuration: duration)
+        let fadeOut = SKAction.fadeOut(withDuration: 0.4)
+        let remove = SKAction.removeFromParent()
+
+        label.run(SKAction.sequence([fadeIn, SKAction.group([pulse, wait]), fadeOut, remove]))
+
+        // Check for novel capabilities
+        let capabilities = parent.detectNovelCapabilities(child: child)
+        if !capabilities.isEmpty {
+            showNovelCapabilityIndicator(capabilities: capabilities, at: position)
+        }
+    }
+
+    /// Shows visual feedback when a novel capability emerges
+    private func showNovelCapabilityIndicator(capabilities: [String], at position: CGPoint) {
+        for (index, capability) in capabilities.enumerated() {
+            let offsetY = 40.0 + Double(index) * 20.0
+            showFloatingLabel(
+                text: "NEW: \(capability)",
+                at: CGPoint(x: position.x, y: position.y + offsetY),
+                color: .cyan,
+                fontSize: 14,
+                offsetY: 0,
+                duration: 3.0
+            )
+        }
+
+        // Add dramatic flash for breakthrough
+        let flash = SKShapeNode(circleOfRadius: 30)
+        flash.strokeColor = .cyan
+        flash.lineWidth = 3
+        flash.fillColor = .clear
+        flash.position = position
+        flash.alpha = 0.8
+        flash.zPosition = 100
+
+        addChild(flash)
+
+        // Expand and fade
+        let expand = SKAction.scale(to: 3.0, duration: 0.8)
+        let fade = SKAction.fadeOut(withDuration: 0.8)
+        let remove = SKAction.removeFromParent()
+        flash.run(SKAction.sequence([SKAction.group([expand, fade]), remove]))
     }
 
     // MARK: - Food Scarcity Warning
@@ -3317,7 +3617,7 @@ class GameScene: SKScene {
     }
 
     // MARK: - Floating Text Labels
-    private func showFloatingLabel(text: String, at position: CGPoint, color: SKColor = .white, fontSize: CGFloat = 14, offsetY: CGFloat = 30) {
+    private func showFloatingLabel(text: String, at position: CGPoint, color: SKColor = .white, fontSize: CGFloat = 14, offsetY: CGFloat = 30, duration: Double = 0.5) {
         let label = SKLabelNode(text: text)
         label.fontName = "Courier-Bold"
         label.fontSize = fontSize
@@ -3333,7 +3633,7 @@ class GameScene: SKScene {
         let moveUp = SKAction.moveBy(x: 0, y: offsetY, duration: 0.8)
         moveUp.timingMode = .easeOut
         let fadeOut = SKAction.fadeOut(withDuration: 0.3)
-        let wait = SKAction.wait(forDuration: 0.5)
+        let wait = SKAction.wait(forDuration: duration)
         let remove = SKAction.removeFromParent()
 
         let sequence = SKAction.sequence([fadeIn, SKAction.group([moveUp, SKAction.sequence([wait, fadeOut])]), remove])
