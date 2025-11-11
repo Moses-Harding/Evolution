@@ -29,9 +29,10 @@ class Organism: Identifiable, Equatable {
     var targetFood: Food?
     var generation: Int
     var speciesId: UUID  // Identifies which species this organism belongs to
+    var lastMutationMultiplier: Double  // Tracks mutation magnitude from birth (for visual feedback)
     let configuration: GameConfiguration
 
-    init(id: UUID = UUID(), speed: Int, senseRange: Int, size: Double, fertility: Double, energyEfficiency: Double, maxAge: Int, aggression: Double, defense: Double, metabolism: Double, heatTolerance: Double, coldTolerance: Double, position: CGPoint, energy: Double? = nil, age: Int = 0, generation: Int = 0, speciesId: UUID? = nil, configuration: GameConfiguration = .default) {
+    init(id: UUID = UUID(), speed: Int, senseRange: Int, size: Double, fertility: Double, energyEfficiency: Double, maxAge: Int, aggression: Double, defense: Double, metabolism: Double, heatTolerance: Double, coldTolerance: Double, position: CGPoint, energy: Double? = nil, age: Int = 0, generation: Int = 0, speciesId: UUID? = nil, lastMutationMultiplier: Double = 1.0, configuration: GameConfiguration = .default) {
         self.id = id
         self.configuration = configuration
         self.speed = max(configuration.minSpeed, min(configuration.maxSpeed, speed))
@@ -52,6 +53,7 @@ class Organism: Identifiable, Equatable {
         self.targetFood = nil
         self.generation = generation
         self.speciesId = speciesId ?? id  // If no species ID provided, this is the founder of a new species
+        self.lastMutationMultiplier = lastMutationMultiplier
     }
 
     // Calculate genetic distance to another organism (0.0 = identical, 1.0 = maximum difference)
@@ -135,40 +137,189 @@ class Organism: Identifiable, Equatable {
         return distance < configuration.speciationThreshold
     }
 
+    // MARK: - Spontaneous Mutation Helpers
+
+    /// Determines if a spontaneous trait reset should occur for this reproduction event
+    private func shouldResetTrait() -> Bool {
+        guard configuration.spontaneousMutationEnabled else { return false }
+        return Double.random(in: 0.0...1.0) < configuration.traitResetProbability
+    }
+
+    /// Calculates the mutation multiplier (1.0 = normal, higher = rare large mutation)
+    private func calculateMutationMultiplier() -> Double {
+        guard configuration.spontaneousMutationEnabled else { return 1.0 }
+
+        let roll = Double.random(in: 0.0...1.0)
+
+        if roll < configuration.massiveMutationProbability {
+            // Massive mutation event (very rare)
+            return Double.random(in: configuration.massiveMutationMultiplierMin...configuration.massiveMutationMultiplierMax)
+        } else if roll < configuration.largeMutationProbability {
+            // Large mutation event (rare)
+            return Double.random(in: configuration.largeMutationMultiplierMin...configuration.largeMutationMultiplierMax)
+        } else {
+            // Normal mutation
+            return 1.0
+        }
+    }
+
+    /// Applies mutation to an integer trait with optional spontaneous reset
+    private func mutateIntTrait(_ parentValue: Int, mutationRange: Int, min: Int, max: Int, multiplier: Double) -> Int {
+        if shouldResetTrait() {
+            // Spontaneous reset: completely re-randomize
+            return Int.random(in: min...max)
+        }
+
+        // Apply normal mutation with multiplier
+        let scaledRange = Int(Double(mutationRange) * multiplier)
+        let mutation = Int.random(in: -scaledRange...scaledRange)
+        return Swift.max(min, Swift.min(max, parentValue + mutation))
+    }
+
+    /// Applies mutation to a double trait with optional spontaneous reset
+    private func mutateDoubleTrait(_ parentValue: Double, mutationRange: Double, min: Double, max: Double, multiplier: Double) -> Double {
+        if shouldResetTrait() {
+            // Spontaneous reset: completely re-randomize
+            return Double.random(in: min...max)
+        }
+
+        // Apply normal mutation with multiplier
+        let scaledRange = mutationRange * multiplier
+        let mutation = Double.random(in: -scaledRange...scaledRange)
+        return Swift.max(min, Swift.min(max, parentValue + mutation))
+    }
+
+    /// Detects novel capabilities that emerged in the child compared to parent
+    func detectNovelCapabilities(child: Organism) -> [String] {
+        var capabilities: [String] = []
+
+        // Speed breakthrough
+        if child.speed >= configuration.speedCapabilityThreshold && speed < configuration.speedCapabilityThreshold {
+            capabilities.append("⚡ Exceptional Speed")
+        }
+
+        // Perception breakthrough
+        if child.senseRange >= configuration.senseCapabilityThreshold && senseRange < configuration.senseCapabilityThreshold {
+            capabilities.append("👁️ Super Perception")
+        }
+
+        // Size breakthrough
+        if child.size >= configuration.sizeCapabilityThreshold && size < configuration.sizeCapabilityThreshold {
+            capabilities.append("🦖 Giant Form")
+        }
+
+        // Combat breakthrough (aggression)
+        if child.aggression >= configuration.combatCapabilityThreshold && aggression < configuration.combatCapabilityThreshold {
+            capabilities.append("⚔️ Warrior Aggression")
+        }
+
+        // Combat breakthrough (defense)
+        if child.defense >= configuration.combatCapabilityThreshold && defense < configuration.combatCapabilityThreshold {
+            capabilities.append("🛡️ Fortress Defense")
+        }
+
+        // Efficiency breakthrough
+        if child.energyEfficiency >= configuration.efficiencyCapabilityThreshold && energyEfficiency < configuration.efficiencyCapabilityThreshold {
+            capabilities.append("♻️ Ultra Efficiency")
+        }
+
+        return capabilities
+    }
+
     // Reproduction with mutation
     func reproduce(at newPosition: CGPoint) -> Organism {
-        let speedMutation = Int.random(in: -configuration.mutationRange...configuration.mutationRange)
-        let childSpeed = max(configuration.minSpeed, min(configuration.maxSpeed, speed + speedMutation))
+        // Calculate mutation multiplier once for this reproduction event
+        // This determines if this is a normal, large, or massive mutation event
+        let mutationMultiplier = calculateMutationMultiplier()
 
-        let senseRangeMutation = Int.random(in: -configuration.senseRangeMutationRange...configuration.senseRangeMutationRange)
-        let childSenseRange = max(configuration.minSenseRange, min(configuration.maxSenseRange, senseRange + senseRangeMutation))
+        // Apply mutations to all traits using the unified mutation system
+        let childSpeed = mutateIntTrait(
+            speed,
+            mutationRange: configuration.mutationRange,
+            min: configuration.minSpeed,
+            max: configuration.maxSpeed,
+            multiplier: mutationMultiplier
+        )
 
-        let sizeMutation = Double.random(in: -configuration.sizeMutationRange...configuration.sizeMutationRange)
-        let childSize = max(configuration.minSize, min(configuration.maxSize, size + sizeMutation))
+        let childSenseRange = mutateIntTrait(
+            senseRange,
+            mutationRange: configuration.senseRangeMutationRange,
+            min: configuration.minSenseRange,
+            max: configuration.maxSenseRange,
+            multiplier: mutationMultiplier
+        )
 
-        let fertilityMutation = Double.random(in: -configuration.fertilityMutationRange...configuration.fertilityMutationRange)
-        let childFertility = max(configuration.minFertility, min(configuration.maxFertility, fertility + fertilityMutation))
+        let childSize = mutateDoubleTrait(
+            size,
+            mutationRange: configuration.sizeMutationRange,
+            min: configuration.minSize,
+            max: configuration.maxSize,
+            multiplier: mutationMultiplier
+        )
 
-        let energyEfficiencyMutation = Double.random(in: -configuration.energyEfficiencyMutationRange...configuration.energyEfficiencyMutationRange)
-        let childEnergyEfficiency = max(configuration.minEnergyEfficiency, min(configuration.maxEnergyEfficiency, energyEfficiency + energyEfficiencyMutation))
+        let childFertility = mutateDoubleTrait(
+            fertility,
+            mutationRange: configuration.fertilityMutationRange,
+            min: configuration.minFertility,
+            max: configuration.maxFertility,
+            multiplier: mutationMultiplier
+        )
 
-        let maxAgeMutation = Int.random(in: -configuration.maxAgeMutationRange...configuration.maxAgeMutationRange)
-        let childMaxAge = max(configuration.minMaxAge, min(configuration.maxMaxAge, maxAge + maxAgeMutation))
+        let childEnergyEfficiency = mutateDoubleTrait(
+            energyEfficiency,
+            mutationRange: configuration.energyEfficiencyMutationRange,
+            min: configuration.minEnergyEfficiency,
+            max: configuration.maxEnergyEfficiency,
+            multiplier: mutationMultiplier
+        )
 
-        let aggressionMutation = Double.random(in: -configuration.aggressionMutationRange...configuration.aggressionMutationRange)
-        let childAggression = max(configuration.minAggression, min(configuration.maxAggression, aggression + aggressionMutation))
+        let childMaxAge = mutateIntTrait(
+            maxAge,
+            mutationRange: configuration.maxAgeMutationRange,
+            min: configuration.minMaxAge,
+            max: configuration.maxMaxAge,
+            multiplier: mutationMultiplier
+        )
 
-        let defenseMutation = Double.random(in: -configuration.defenseMutationRange...configuration.defenseMutationRange)
-        let childDefense = max(configuration.minDefense, min(configuration.maxDefense, defense + defenseMutation))
+        let childAggression = mutateDoubleTrait(
+            aggression,
+            mutationRange: configuration.aggressionMutationRange,
+            min: configuration.minAggression,
+            max: configuration.maxAggression,
+            multiplier: mutationMultiplier
+        )
 
-        let metabolismMutation = Double.random(in: -configuration.metabolismMutationRange...configuration.metabolismMutationRange)
-        let childMetabolism = max(configuration.minMetabolism, min(configuration.maxMetabolism, metabolism + metabolismMutation))
+        let childDefense = mutateDoubleTrait(
+            defense,
+            mutationRange: configuration.defenseMutationRange,
+            min: configuration.minDefense,
+            max: configuration.maxDefense,
+            multiplier: mutationMultiplier
+        )
 
-        let heatToleranceMutation = Double.random(in: -configuration.heatToleranceMutationRange...configuration.heatToleranceMutationRange)
-        let childHeatTolerance = max(configuration.minHeatTolerance, min(configuration.maxHeatTolerance, heatTolerance + heatToleranceMutation))
+        let childMetabolism = mutateDoubleTrait(
+            metabolism,
+            mutationRange: configuration.metabolismMutationRange,
+            min: configuration.minMetabolism,
+            max: configuration.maxMetabolism,
+            multiplier: mutationMultiplier
+        )
 
-        let coldToleranceMutation = Double.random(in: -configuration.coldToleranceMutationRange...configuration.coldToleranceMutationRange)
-        let childColdTolerance = max(configuration.minColdTolerance, min(configuration.maxColdTolerance, coldTolerance + coldToleranceMutation))
+        let childHeatTolerance = mutateDoubleTrait(
+            heatTolerance,
+            mutationRange: configuration.heatToleranceMutationRange,
+            min: configuration.minHeatTolerance,
+            max: configuration.maxHeatTolerance,
+            multiplier: mutationMultiplier
+        )
+
+        let childColdTolerance = mutateDoubleTrait(
+            coldTolerance,
+            mutationRange: configuration.coldToleranceMutationRange,
+            min: configuration.minColdTolerance,
+            max: configuration.maxColdTolerance,
+            multiplier: mutationMultiplier
+        )
 
         return Organism(
             speed: childSpeed,
@@ -187,6 +338,7 @@ class Organism: Identifiable, Equatable {
             age: 0,
             generation: generation + 1,
             speciesId: speciesId,  // Inherit parent's species ID
+            lastMutationMultiplier: mutationMultiplier,  // Store mutation magnitude for tracking
             configuration: configuration
         )
     }

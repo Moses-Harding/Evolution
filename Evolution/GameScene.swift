@@ -3187,49 +3187,102 @@ class GameScene: SKScene {
 
     // MARK: - Mutation Indicators
     private func showMutationIndicator(parent: Organism, child: Organism, at position: CGPoint) {
-        // Calculate mutation severity based on trait differences
-        let speedDiff = abs(Double(child.speed - parent.speed))
-        let sizeDiff = abs(child.size - parent.size)
-        let senseRangeDiff = abs(Double(child.senseRange - parent.senseRange))
+        // Check for spontaneous mutation events based on mutation multiplier
+        let mutationMultiplier = child.lastMutationMultiplier
 
-        // Normalize differences (approximate ranges)
-        let normalizedSpeedDiff = speedDiff / 2.0  // mutation range is ±0-2
-        let normalizedSizeDiff = sizeDiff / 0.2  // mutation range is ±0-0.2
-        let normalizedSenseDiff = senseRangeDiff / 20.0  // mutation range is ±0-20
+        // Classify mutation type
+        let (text, color, size, duration) = if mutationMultiplier >= configuration.massiveMutationMultiplierMin {
+            // Massive spontaneous mutation (very rare)
+            ("💥 MASSIVE MUTATION! 💥", SKColor.magenta, CGFloat(20), 3.0)
+        } else if mutationMultiplier >= configuration.largeMutationMultiplierMin {
+            // Large spontaneous mutation (rare)
+            ("⚡⚡⚡ LARGE MUTATION ⚡⚡⚡", SKColor.orange, CGFloat(16), 2.0)
+        } else {
+            // Normal mutation - use trait difference calculation
+            let speedDiff = abs(Double(child.speed - parent.speed))
+            let sizeDiff = abs(child.size - parent.size)
+            let senseRangeDiff = abs(Double(child.senseRange - parent.senseRange))
 
-        let totalMutation = (normalizedSpeedDiff + normalizedSizeDiff + normalizedSenseDiff) / 3.0
+            // Normalize differences (approximate ranges)
+            let normalizedSpeedDiff = speedDiff / 2.0  // mutation range is ±0-2
+            let normalizedSizeDiff = sizeDiff / 0.2  // mutation range is ±0-0.2
+            let normalizedSenseDiff = senseRangeDiff / 20.0  // mutation range is ±0-20
 
-        // Only show indicator if mutation is significant
-        if totalMutation > 0.3 {
-            let (text, color, size) = if totalMutation > 0.8 {
-                ("⚡⚡⚡", SKColor.magenta, CGFloat(16))  // Major mutation
-            } else if totalMutation > 0.5 {
-                ("⚡⚡", SKColor.orange, CGFloat(14))  // Moderate mutation
+            let totalMutation = (normalizedSpeedDiff + normalizedSizeDiff + normalizedSenseDiff) / 3.0
+
+            // Only show indicator if mutation is significant
+            if totalMutation > 0.3 {
+                if totalMutation > 0.8 {
+                    ("⚡⚡⚡", SKColor.magenta, CGFloat(16), 1.2)  // Major mutation
+                } else if totalMutation > 0.5 {
+                    ("⚡⚡", SKColor.orange, CGFloat(14), 1.0)  // Moderate mutation
+                } else {
+                    ("⚡", SKColor.yellow, CGFloat(12), 0.8)  // Minor mutation
+                }
             } else {
-                ("⚡", SKColor.yellow, CGFloat(12))  // Minor mutation
+                return  // No significant mutation to display
             }
-
-            // Create indicator
-            let label = SKLabelNode(text: text)
-            label.fontSize = size
-            label.position = CGPoint(x: position.x + 15, y: position.y + 10)
-            label.zPosition = 101
-            label.alpha = 0
-
-            addChild(label)
-
-            // Pulse and fade
-            let fadeIn = SKAction.fadeIn(withDuration: 0.2)
-            let pulse = SKAction.sequence([
-                SKAction.scale(to: 1.3, duration: 0.15),
-                SKAction.scale(to: 1.0, duration: 0.15)
-            ])
-            let wait = SKAction.wait(forDuration: 0.8)
-            let fadeOut = SKAction.fadeOut(withDuration: 0.3)
-            let remove = SKAction.removeFromParent()
-
-            label.run(SKAction.sequence([fadeIn, SKAction.group([pulse, wait]), fadeOut, remove]))
         }
+
+        // Create indicator
+        let label = SKLabelNode(text: text)
+        label.fontSize = size
+        label.fontColor = color
+        label.position = CGPoint(x: position.x, y: position.y + 20)
+        label.zPosition = 101
+        label.alpha = 0
+
+        addChild(label)
+
+        // Pulse and fade (more dramatic for spontaneous mutations)
+        let fadeIn = SKAction.fadeIn(withDuration: 0.2)
+        let pulse = SKAction.sequence([
+            SKAction.scale(to: 1.3, duration: 0.15),
+            SKAction.scale(to: 1.0, duration: 0.15)
+        ])
+        let wait = SKAction.wait(forDuration: duration)
+        let fadeOut = SKAction.fadeOut(withDuration: 0.4)
+        let remove = SKAction.removeFromParent()
+
+        label.run(SKAction.sequence([fadeIn, SKAction.group([pulse, wait]), fadeOut, remove]))
+
+        // Check for novel capabilities
+        let capabilities = parent.detectNovelCapabilities(child: child)
+        if !capabilities.isEmpty {
+            showNovelCapabilityIndicator(capabilities: capabilities, at: position)
+        }
+    }
+
+    /// Shows visual feedback when a novel capability emerges
+    private func showNovelCapabilityIndicator(capabilities: [String], at position: CGPoint) {
+        for (index, capability) in capabilities.enumerated() {
+            let offsetY = 40.0 + Double(index) * 20.0
+            showFloatingLabel(
+                text: "NEW: \(capability)",
+                at: CGPoint(x: position.x, y: position.y + offsetY),
+                color: .cyan,
+                fontSize: 14,
+                offsetY: 0,
+                duration: 3.0
+            )
+        }
+
+        // Add dramatic flash for breakthrough
+        let flash = SKShapeNode(circleOfRadius: 30)
+        flash.strokeColor = .cyan
+        flash.lineWidth = 3
+        flash.fillColor = .clear
+        flash.position = position
+        flash.alpha = 0.8
+        flash.zPosition = 100
+
+        addChild(flash)
+
+        // Expand and fade
+        let expand = SKAction.scale(to: 3.0, duration: 0.8)
+        let fade = SKAction.fadeOut(withDuration: 0.8)
+        let remove = SKAction.removeFromParent()
+        flash.run(SKAction.sequence([SKAction.group([expand, fade]), remove]))
     }
 
     // MARK: - Food Scarcity Warning
@@ -3317,7 +3370,7 @@ class GameScene: SKScene {
     }
 
     // MARK: - Floating Text Labels
-    private func showFloatingLabel(text: String, at position: CGPoint, color: SKColor = .white, fontSize: CGFloat = 14, offsetY: CGFloat = 30) {
+    private func showFloatingLabel(text: String, at position: CGPoint, color: SKColor = .white, fontSize: CGFloat = 14, offsetY: CGFloat = 30, duration: Double = 0.5) {
         let label = SKLabelNode(text: text)
         label.fontName = "Courier-Bold"
         label.fontSize = fontSize
@@ -3333,7 +3386,7 @@ class GameScene: SKScene {
         let moveUp = SKAction.moveBy(x: 0, y: offsetY, duration: 0.8)
         moveUp.timingMode = .easeOut
         let fadeOut = SKAction.fadeOut(withDuration: 0.3)
-        let wait = SKAction.wait(forDuration: 0.5)
+        let wait = SKAction.wait(forDuration: duration)
         let remove = SKAction.removeFromParent()
 
         let sequence = SKAction.sequence([fadeIn, SKAction.group([moveUp, SKAction.sequence([wait, fadeOut])]), remove])

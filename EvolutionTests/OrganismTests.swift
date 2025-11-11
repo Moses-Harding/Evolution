@@ -288,4 +288,182 @@ final class OrganismTests: XCTestCase {
         XCTAssertEqual(organism1, organism1)
         XCTAssertNotEqual(organism1, organism2)
     }
+
+    // MARK: - Spontaneous Mutation System Tests
+
+    func testMutationMultiplierTracking() {
+        // Test that normal mutations have multiplier ~1.0
+        let parent = createOrganism(speed: 15)
+        var normalMutationCount = 0
+
+        // Run multiple reproductions - most should be normal mutations
+        for _ in 0..<100 {
+            let child = parent.reproduce(at: .zero)
+            if child.lastMutationMultiplier == 1.0 {
+                normalMutationCount += 1
+            }
+            XCTAssertGreaterThan(child.lastMutationMultiplier, 0.0, "Mutation multiplier should be positive")
+        }
+
+        // Most mutations should be normal (multiplier = 1.0)
+        XCTAssertGreaterThan(normalMutationCount, 80, "Most mutations should be normal")
+    }
+
+    func testSpontaneousLargeMutationsOccur() {
+        // Test that large mutations can occur (though rare)
+        let parent = createOrganism(speed: 15)
+        var largeMutationFound = false
+
+        // Run many reproductions to find at least one large mutation
+        // With 2% probability, we should see at least one in ~150 trials
+        for _ in 0..<200 {
+            let child = parent.reproduce(at: .zero)
+            if child.lastMutationMultiplier >= defaultConfig.largeMutationMultiplierMin {
+                largeMutationFound = true
+                break
+            }
+        }
+
+        XCTAssertTrue(largeMutationFound, "At least one large mutation should occur in 200 trials (p=0.02 each)")
+    }
+
+    func testSpontaneousMutationsMaintainBounds() {
+        // Test that even with spontaneous mutations, all traits stay within valid bounds
+        let parent = createOrganism(speed: 15, senseRange: 200, size: 1.5, fertility: 1.2)
+
+        for _ in 0..<100 {
+            let child = parent.reproduce(at: .zero)
+
+            // All traits must remain within configured bounds
+            XCTAssertGreaterThanOrEqual(child.speed, defaultConfig.minSpeed)
+            XCTAssertLessThanOrEqual(child.speed, defaultConfig.maxSpeed)
+
+            XCTAssertGreaterThanOrEqual(child.senseRange, defaultConfig.minSenseRange)
+            XCTAssertLessThanOrEqual(child.senseRange, defaultConfig.maxSenseRange)
+
+            XCTAssertGreaterThanOrEqual(child.size, defaultConfig.minSize)
+            XCTAssertLessThanOrEqual(child.size, defaultConfig.maxSize)
+
+            XCTAssertGreaterThanOrEqual(child.fertility, defaultConfig.minFertility)
+            XCTAssertLessThanOrEqual(child.fertility, defaultConfig.maxFertility)
+
+            XCTAssertGreaterThanOrEqual(child.energyEfficiency, defaultConfig.minEnergyEfficiency)
+            XCTAssertLessThanOrEqual(child.energyEfficiency, defaultConfig.maxEnergyEfficiency)
+
+            XCTAssertGreaterThanOrEqual(child.aggression, defaultConfig.minAggression)
+            XCTAssertLessThanOrEqual(child.aggression, defaultConfig.maxAggression)
+
+            XCTAssertGreaterThanOrEqual(child.defense, defaultConfig.minDefense)
+            XCTAssertLessThanOrEqual(child.defense, defaultConfig.maxDefense)
+
+            XCTAssertGreaterThanOrEqual(child.heatTolerance, defaultConfig.minHeatTolerance)
+            XCTAssertLessThanOrEqual(child.heatTolerance, defaultConfig.maxHeatTolerance)
+
+            XCTAssertGreaterThanOrEqual(child.coldTolerance, defaultConfig.minColdTolerance)
+            XCTAssertLessThanOrEqual(child.coldTolerance, defaultConfig.maxColdTolerance)
+        }
+    }
+
+    func testNovelCapabilityDetectionSpeed() {
+        // Test detection of speed breakthrough
+        let slowParent = createOrganism(speed: 20)
+        let fastChild = createOrganism(speed: 26)  // Above threshold (25)
+
+        let capabilities = slowParent.detectNovelCapabilities(child: fastChild)
+
+        XCTAssertTrue(capabilities.contains("⚡ Exceptional Speed"), "Should detect speed breakthrough")
+    }
+
+    func testNovelCapabilityDetectionSense() {
+        // Test detection of perception breakthrough
+        let normalParent = createOrganism(senseRange: 200)
+        let perceptiveChild = createOrganism(senseRange: 360)  // Above threshold (350)
+
+        let capabilities = normalParent.detectNovelCapabilities(child: perceptiveChild)
+
+        XCTAssertTrue(capabilities.contains("👁️ Super Perception"), "Should detect perception breakthrough")
+    }
+
+    func testNovelCapabilityDetectionSize() {
+        // Test detection of size breakthrough
+        let normalParent = createOrganism(size: 1.2)
+        let giantChild = createOrganism(size: 1.85)  // Above threshold (1.8)
+
+        let capabilities = normalParent.detectNovelCapabilities(child: giantChild)
+
+        XCTAssertTrue(capabilities.contains("🦖 Giant Form"), "Should detect size breakthrough")
+    }
+
+    func testNovelCapabilityDetectionCombat() {
+        // Test detection of combat breakthroughs
+        let normalParent = createOrganism(aggression: 0.5, defense: 0.5)
+        let warriorChild = createOrganism(aggression: 0.9, defense: 0.5)  // Aggression above threshold (0.85)
+        let defenderChild = createOrganism(aggression: 0.5, defense: 0.9)  // Defense above threshold (0.85)
+
+        let warriorCapabilities = normalParent.detectNovelCapabilities(child: warriorChild)
+        let defenderCapabilities = normalParent.detectNovelCapabilities(child: defenderChild)
+
+        XCTAssertTrue(warriorCapabilities.contains("⚔️ Warrior Aggression"), "Should detect aggression breakthrough")
+        XCTAssertTrue(defenderCapabilities.contains("🛡️ Fortress Defense"), "Should detect defense breakthrough")
+    }
+
+    func testNovelCapabilityDetectionEfficiency() {
+        // Test detection of efficiency breakthrough
+        let normalParent = createOrganism(energyEfficiency: 1.0)
+        let efficientChild = createOrganism(energyEfficiency: 1.45)  // Above threshold (1.4)
+
+        let capabilities = normalParent.detectNovelCapabilities(child: efficientChild)
+
+        XCTAssertTrue(capabilities.contains("♻️ Ultra Efficiency"), "Should detect efficiency breakthrough")
+    }
+
+    func testNovelCapabilityNotDetectedWhenBelowThreshold() {
+        // Test that capabilities are NOT detected when child is below threshold
+        let normalParent = createOrganism(speed: 20, senseRange: 200, size: 1.2)
+        let normalChild = createOrganism(speed: 22, senseRange: 220, size: 1.3)
+
+        let capabilities = normalParent.detectNovelCapabilities(child: normalChild)
+
+        XCTAssertTrue(capabilities.isEmpty, "Should not detect capabilities when below thresholds")
+    }
+
+    func testSpontaneousMutationDisabled() {
+        // Test that when spontaneous mutations are disabled, multiplier is always 1.0
+        var configNoSpontaneous = defaultConfig
+        configNoSpontaneous.spontaneousMutationEnabled = false
+
+        let parent = createOrganism(speed: 15, configuration: configNoSpontaneous)
+
+        for _ in 0..<50 {
+            let child = parent.reproduce(at: .zero)
+            XCTAssertEqual(child.lastMutationMultiplier, 1.0, "Mutation multiplier should be 1.0 when spontaneous mutations disabled")
+        }
+    }
+
+    func testLargeMutationsProduceLargerChanges() {
+        // Test that large mutations actually produce larger trait changes
+        let parent = createOrganism(speed: 15)
+        var largeChangeFound = false
+
+        // Run many reproductions to find a large mutation and verify its effect
+        for _ in 0..<200 {
+            let child = parent.reproduce(at: .zero)
+
+            // If we found a large mutation, check that the change is substantial
+            if child.lastMutationMultiplier >= defaultConfig.largeMutationMultiplierMin {
+                // With large mutation multiplier (3-5x), changes can be much larger than normal range
+                let speedDiff = abs(child.speed - parent.speed)
+
+                // Normal mutation range is ±2, large should be capable of ±6 to ±10 or more
+                if speedDiff > defaultConfig.mutationRange {
+                    largeChangeFound = true
+                    break
+                }
+            }
+        }
+
+        // Note: This test might occasionally fail due to RNG, but should pass most of the time
+        // We're checking if large mutations CAN produce larger changes, not that they always do
+        XCTAssertTrue(largeChangeFound, "Large mutations should be capable of producing changes larger than normal range")
+    }
 }
