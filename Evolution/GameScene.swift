@@ -566,6 +566,63 @@ class GameScene: SKScene {
         return nearest
     }
 
+    private func resolveFoodContest(for organism: Organism, food: Food) -> Organism {
+        // Find all organisms within contest range of this food
+        var contestants: [Organism] = []
+
+        for other in organisms where !other.hasFoodToday {
+            let dx = food.position.x - other.position.x
+            let dy = food.position.y - other.position.y
+            let distance = sqrt(dx * dx + dy * dy)
+
+            if distance < configuration.foodContestRange {
+                contestants.append(other)
+            }
+        }
+
+        // If only one contestant, they win automatically
+        if contestants.count <= 1 {
+            return organism
+        }
+
+        // Multiple contestants - resolve with aggression vs defense
+        var winner = contestants[0]
+        var highestScore: Double = 0.0
+
+        for contestant in contestants {
+            // Calculate contest score: aggression + random factor - opponents' defense
+            let aggressionBonus = contestant.aggression * 50  // 0-50 points from aggression
+            let randomFactor = Double.random(in: 0...30)  // Random element
+            let sizeBonus = (contestant.size - 1.0) * 10  // Larger organisms have advantage
+
+            // Defense reduces others' effectiveness against this contestant
+            let defenseReduction = (1.0 - contestant.defense) * 20  // 0-20 penalty
+
+            let contestScore = aggressionBonus + randomFactor + sizeBonus - defenseReduction
+
+            if contestScore > highestScore {
+                highestScore = contestScore
+                winner = contestant
+            }
+        }
+
+        // Visual feedback for contest
+        if winner.id != organism.id && contestants.contains(where: { $0.id == organism.id }) {
+            // This organism lost the contest - show red flash
+            if let node = organismNodes[organism.id] {
+                let originalColor = node.fillColor
+                node.fillColor = SKColor.red
+                let resetColor = SKAction.run {
+                    node.fillColor = originalColor
+                }
+                let wait = SKAction.wait(forDuration: 0.2)
+                node.run(SKAction.sequence([wait, resetColor]))
+            }
+        }
+
+        return winner
+    }
+
     private func updateEnergyBars() {
         for organism in organisms {
             guard let energyBar = energyBarNodes[organism.id] else { continue }
@@ -604,15 +661,19 @@ class GameScene: SKScene {
 
                 let collisionDistance = CGFloat(organism.effectiveRadius) + CGFloat(configuration.foodSize / 2)
                 if distance < collisionDistance {
-                    // Collision detected!
-                    organism.hasFoodToday = true
-                    target.isClaimed = true
+                    // Check for food contestation from nearby aggressive organisms
+                    let winner = resolveFoodContest(for: organism, food: target)
 
-                    // Restore energy from eating
-                    organism.gainEnergy(configuration.energyGainFromFood)
+                    if winner.id == organism.id {
+                        // This organism won the food (or no contest)
+                        organism.hasFoodToday = true
+                        target.isClaimed = true
 
-                    // Update visual feedback with animation
-                    if let foodNode = foodNodes[target.id] {
+                        // Restore energy from eating
+                        organism.gainEnergy(configuration.energyGainFromFood)
+
+                        // Update visual feedback with animation
+                        if let foodNode = foodNodes[target.id] {
                         // Animate food being consumed
                         let shrink = SKAction.scale(to: 0.3, duration: 0.2)
                         let fadeOut = SKAction.fadeAlpha(to: 0.3, duration: 0.2)
