@@ -11,9 +11,10 @@ import Combine
 
 struct GameView: View {
     @State private var viewModel: GameViewModel?
-    @State private var showStats = true
+    @State private var showStats = false  // Charts hidden by default
     @State private var showConfiguration = true
     @State private var sceneSize: CGSize = .zero
+    @State private var showLegend = false  // Legend hidden by default
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
@@ -100,7 +101,8 @@ struct GameView: View {
                         HStack {
                             GameControls(
                                 viewModel: viewModel,
-                                showStats: $showStats
+                                showStats: $showStats,
+                                showLegend: $showLegend
                             )
                             .padding(.horizontal)
                             .padding(.vertical, 8)
@@ -317,6 +319,7 @@ struct StatRow: View {
 struct GameControls: View {
     @ObservedObject var viewModel: GameViewModel
     @Binding var showStats: Bool
+    @Binding var showLegend: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -368,6 +371,41 @@ struct GameControls: View {
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
                     .background(Color.purple)
+                    .foregroundColor(.white)
+                    .cornerRadius(8)
+                }
+
+                // Legend toggle
+                Button(action: {
+                    showLegend.toggle()
+                    viewModel.toggleLegend(show: showLegend)
+                }) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "info.circle.fill")
+                        Text("Key")
+                            .fontWeight(.bold)
+                    }
+                    .font(.system(size: 16))
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(showLegend ? Color.cyan : Color.gray)
+                    .foregroundColor(.white)
+                    .cornerRadius(8)
+                }
+
+                // Force next day button
+                Button(action: {
+                    viewModel.forceNextDay()
+                }) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "forward.fill")
+                        Text("Next Day")
+                            .fontWeight(.bold)
+                    }
+                    .font(.system(size: 16))
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(Color.teal)
                     .foregroundColor(.white)
                     .cornerRadius(8)
                 }
@@ -477,6 +515,14 @@ class GameViewModel: ObservableObject {
         scene.clearAllObstacles()
     }
 
+    func toggleLegend(show: Bool) {
+        scene.toggleLegend(show: show)
+    }
+
+    func forceNextDay() {
+        scene.forceNextDay()
+    }
+
     init(configuration: GameConfiguration = .default) {
         self.configuration = configuration
         // Start with a reasonable default size, will be updated when view appears
@@ -496,6 +542,11 @@ class GameViewModel: ObservableObject {
         scene.selectedOrganismPublisher
             .receive(on: DispatchQueue.main)
             .sink { [weak self] organism in
+                if let organism = organism {
+                    print("DEBUG: GameViewModel received organism - ID: \(String(organism.id.uuidString.prefix(8)))")
+                } else {
+                    print("DEBUG: GameViewModel received nil organism")
+                }
                 self?.selectedOrganism = organism
             }
             .store(in: &cancellables)

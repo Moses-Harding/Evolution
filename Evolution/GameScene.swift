@@ -34,6 +34,12 @@ class GameScene: SKScene {
     private var selectedOrganismId: UUID?
     private var selectionIndicator: SKShapeNode?
 
+    // Drag state for obstacles
+    private var draggedObstacle: Obstacle?
+    private var dragPreview: SKShapeNode?
+    private var dragStartPosition: CGPoint?
+    private var isCreatingNewObstacle: Bool = false
+
     private var currentDay: Int = 0
     private var currentSeason: Season = .spring
     private var currentWeather: WeatherEvent = WeatherEvent(type: .clear)
@@ -98,7 +104,7 @@ class GameScene: SKScene {
         setupDayNightOverlay()
         setupWeatherOverlay()
         updateStatistics()
-        showLegend()
+        // Legend is now shown on demand via button
     }
 
     // MARK: - Playable Bounds and Safe Areas
@@ -179,59 +185,81 @@ class GameScene: SKScene {
         legend.position = CGPoint(x: legendX, y: legendY)
 
         // Create semi-transparent background
-        let background = SKShapeNode(rectOf: CGSize(width: 220, height: 120), cornerRadius: 8)
-        background.fillColor = SKColor(white: 0.0, alpha: 0.7)
-        background.strokeColor = SKColor(white: 0.4, alpha: 0.8)
-        background.lineWidth = 1
+        let background = SKShapeNode(rectOf: CGSize(width: 240, height: 200), cornerRadius: 8)
+        background.fillColor = SKColor(white: 0.0, alpha: 0.8)
+        background.strokeColor = SKColor(white: 0.4, alpha: 0.9)
+        background.lineWidth = 2
         legend.addChild(background)
 
         // Title
-        let title = SKLabelNode(text: "LEGEND")
+        let title = SKLabelNode(text: "KEY")
         title.fontName = "Courier-Bold"
-        title.fontSize = 12
-        title.fontColor = .white
+        title.fontSize = 14
+        title.fontColor = .cyan
         title.horizontalAlignmentMode = .left
-        title.position = CGPoint(x: -100, y: 55)
+        title.position = CGPoint(x: -110, y: 90)
         legend.addChild(title)
 
         // Helper to add legend items
-        var yPos: CGFloat = 35
-        func addLegendItem(color: SKColor, glowWidth: CGFloat = 0, text: String) {
-            // Color indicator circle
-            let indicator = SKShapeNode(circleOfRadius: 6)
-            indicator.fillColor = color
-            indicator.strokeColor = .white
-            indicator.lineWidth = 1
-            indicator.glowWidth = glowWidth
-            indicator.position = CGPoint(x: -95, y: yPos)
+        var yPos: CGFloat = 65
+        func addLegendItem(color: SKColor, shape: String = "circle", text: String) {
+            // Create indicator based on shape
+            let indicator: SKShapeNode
+            if shape == "circle" {
+                indicator = SKShapeNode(circleOfRadius: 6)
+                indicator.fillColor = color
+                indicator.strokeColor = .white
+                indicator.lineWidth = 1
+            } else if shape == "square" {
+                indicator = SKShapeNode(rectOf: CGSize(width: 10, height: 10))
+                indicator.fillColor = color
+                indicator.strokeColor = .white
+                indicator.lineWidth = 1
+            } else { // rectangle
+                indicator = SKShapeNode(rectOf: CGSize(width: 14, height: 8))
+                indicator.fillColor = color
+                indicator.strokeColor = .white
+                indicator.lineWidth = 1
+            }
+            indicator.position = CGPoint(x: -105, y: yPos)
             legend.addChild(indicator)
 
             // Text label
             let label = SKLabelNode(text: text)
             label.fontName = "Courier"
-            label.fontSize = 10
+            label.fontSize = 9
             label.fontColor = .white
             label.horizontalAlignmentMode = .left
-            label.position = CGPoint(x: -82, y: yPos - 3)
+            label.position = CGPoint(x: -90, y: yPos - 3)
             legend.addChild(label)
 
-            yPos -= 18
+            yPos -= 16
         }
 
-        // Add legend items
-        addLegendItem(color: .blue, text: "Slow (low speed)")
-        addLegendItem(color: .red, text: "Fast (high speed)")
-        addLegendItem(color: .green, text: "Food")
-        addLegendItem(color: SKColor(red: 0.5, green: 0.8, blue: 1.0, alpha: 0.5), text: "Sense range")
+        // Organisms
+        addLegendItem(color: .blue, text: "Slow organism")
+        addLegendItem(color: .red, text: "Fast organism")
+        addLegendItem(color: .green, text: "Food resource")
+        addLegendItem(color: SKColor(red: 0.5, green: 0.8, blue: 1.0, alpha: 0.4), text: "Sense range (tapped)")
 
-        // Add tap instruction at bottom
-        let tapLabel = SKLabelNode(text: "Tap organism for stats")
-        tapLabel.fontName = "Courier"
-        tapLabel.fontSize = 9
-        tapLabel.fontColor = .gray
-        tapLabel.horizontalAlignmentMode = .center
-        tapLabel.position = CGPoint(x: 0, y: -60)
-        legend.addChild(tapLabel)
+        // Obstacles
+        addLegendItem(color: .gray, shape: "rectangle", text: "Wall (blocks)")
+        addLegendItem(color: SKColor.brown, shape: "circle", text: "Rock (blocks)")
+        addLegendItem(color: .red, shape: "square", text: "Hazard (kills)")
+
+        // Add instructions at bottom
+        let instructionText = """
+        Tap organism to see stats
+        and sense range
+        """
+        let instructions = SKLabelNode(text: instructionText)
+        instructions.fontName = "Courier"
+        instructions.fontSize = 8
+        instructions.fontColor = .gray
+        instructions.horizontalAlignmentMode = .center
+        instructions.numberOfLines = 2
+        instructions.position = CGPoint(x: 0, y: -95)
+        legend.addChild(instructions)
 
         addChild(legend)
     }
@@ -928,6 +956,7 @@ class GameScene: SKScene {
         // Check if day should end
         if shouldEndDay() {
             // End of day - handle reproduction and death
+            print("DEBUG: Starting day transition from day \(currentDay)")
             endDay()
             currentDay += 1
             statistics.currentDay = currentDay
@@ -957,7 +986,17 @@ class GameScene: SKScene {
         // Day ends when:
         // 1. All food is claimed, OR
         // 2. All organisms have eaten
-        return allFoodClaimed() || allOrganismsFed()
+        let foodClaimed = allFoodClaimed()
+        let organismsFed = allOrganismsFed()
+        let shouldEnd = foodClaimed || organismsFed
+
+        if shouldEnd {
+            print("DEBUG: Day \(currentDay) ending - Food claimed: \(foodClaimed), All fed: \(organismsFed)")
+            print("DEBUG: Food status - Total: \(food.count), Claimed: \(food.filter { $0.isClaimed }.count)")
+            print("DEBUG: Organism status - Total: \(organisms.count), Fed: \(organisms.filter { $0.hasFoodToday }.count)")
+        }
+
+        return shouldEnd
     }
 
     private func allOrganismsFed() -> Bool {
@@ -970,6 +1009,14 @@ class GameScene: SKScene {
     }
 
     private func updateOrganisms(deltaTime: TimeInterval) {
+        let unclaimedFoodCount = food.filter { !$0.isClaimed }.count
+        let organismCount = organisms.count
+
+        // Log every 60 frames (once per second at 60 FPS)
+        if Int(currentDay * 60) % 60 == 0 {
+            print("DEBUG: Day \(currentDay) - Organisms: \(organismCount), Unclaimed food: \(unclaimedFoodCount)")
+        }
+
         for organism in organisms {
             // Find nearest unclaimed food if no target
             if organism.targetFood == nil || organism.targetFood!.isClaimed {
@@ -1023,7 +1070,7 @@ class GameScene: SKScene {
                     node.position = newPosition
                 }
 
-                // Update sense range indicator (position and size for day/night)
+                // Update sense range indicator (position and size for day/night) - only for selected organism
                 if let senseNode = senseRangeNodes[organism.id] {
                     senseNode.position = newPosition
 
@@ -1034,14 +1081,19 @@ class GameScene: SKScene {
                         // Recreate node with new radius (animated transition would be smoother but more complex)
                         senseNode.removeFromParent()
                         let newSenseNode = SKShapeNode(circleOfRadius: targetRadius)
-                        newSenseNode.strokeColor = SKColor(red: 0.5, green: 0.8, blue: 1.0, alpha: 0.35)
-                        newSenseNode.lineWidth = 1.5
-                        newSenseNode.fillColor = .clear
+                        newSenseNode.strokeColor = SKColor(red: 0.5, green: 0.8, blue: 1.0, alpha: 0.5)
+                        newSenseNode.lineWidth = 2
+                        newSenseNode.fillColor = SKColor(red: 0.5, green: 0.8, blue: 1.0, alpha: 0.1)
                         newSenseNode.position = newPosition
                         newSenseNode.zPosition = 1
                         senseRangeNodes[organism.id] = newSenseNode
                         addChild(newSenseNode)
                     }
+                }
+
+                // Update selection indicator position if this organism is selected
+                if organism.id == selectedOrganismId {
+                    selectionIndicator?.position = newPosition
                 }
             }
         }
@@ -1337,6 +1389,8 @@ class GameScene: SKScene {
         statistics.births = births
         statistics.deaths = deaths
         updateStatistics()
+
+        print("DEBUG: Day ended - Births: \(births), Deaths: \(deaths), Survivors: \(survivors.count)")
     }
 
     private func resetOrganismsForNewDay() {
@@ -1360,18 +1414,8 @@ class GameScene: SKScene {
     private func addOrganism(_ organism: Organism, animated: Bool = false) {
         organisms.append(organism)
 
-        // Create sense range indicator (circle showing detection range)
-        if showSenseRanges {
-            let effectiveSenseRange = getEffectiveSenseRange(for: organism)
-            let senseRangeNode = SKShapeNode(circleOfRadius: CGFloat(effectiveSenseRange))
-            senseRangeNode.strokeColor = SKColor(red: 0.5, green: 0.8, blue: 1.0, alpha: 0.35)
-            senseRangeNode.lineWidth = 1.5
-            senseRangeNode.fillColor = .clear
-            senseRangeNode.position = organism.position
-            senseRangeNode.zPosition = 1
-            senseRangeNodes[organism.id] = senseRangeNode
-            addChild(senseRangeNode)
-        }
+        // Sense range indicator is now only shown for selected organism
+        // (created in selectOrganism method)
 
         // Create organism visual node (size-based radius)
         let node = SKShapeNode(circleOfRadius: CGFloat(organism.effectiveRadius))
@@ -1617,6 +1661,23 @@ class GameScene: SKScene {
         }
         obstacleNodes.removeAll()
         obstacles.removeAll()
+    }
+
+    func toggleLegend(show: Bool) {
+        if show {
+            showLegend()
+        } else {
+            childNode(withName: "legend")?.removeFromParent()
+        }
+    }
+
+    func forceNextDay() {
+        print("DEBUG: Force next day triggered at day \(currentDay)")
+        endDay()
+        currentDay += 1
+        spawnFood()
+        updateStatistics()
+        print("DEBUG: Day transitioned to \(currentDay), population: \(organisms.count)")
     }
 
     // MARK: - Statistics
@@ -2506,23 +2567,27 @@ class GameScene: SKScene {
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard let touch = touches.first else { return }
         let location = touch.location(in: self)
+        dragStartPosition = location
 
-        // If in obstacle placement mode, place an obstacle
+        // If in obstacle placement mode, check if tapping existing obstacle to drag
         if isPlacingObstacles {
-            let obstacle: Obstacle
-            switch currentObstacleType {
-            case .wall:
-                obstacle = Obstacle(position: location, size: CGSize(width: 60, height: 60), type: .wall)
-            case .rock:
-                obstacle = Obstacle(position: location, radius: 30, type: .rock)
-            case .hazard:
-                obstacle = Obstacle(position: location, radius: 35, type: .hazard)
+            // Check if touched an existing obstacle
+            for obstacle in obstacles {
+                if obstacle.contains(point: location) {
+                    // Start dragging existing obstacle
+                    draggedObstacle = obstacle
+                    isCreatingNewObstacle = false
+                    createDragPreview(for: obstacle, at: location)
+                    return
+                }
             }
-            addObstacle(obstacle)
+
+            // Not touching an obstacle - will create new one if drag continues
+            isCreatingNewObstacle = true
             return
         }
 
-        // Check if tapped on an organism
+        // Not in placement mode - check for organism selection
         var tappedOrganism: Organism?
         var shortestDistance: CGFloat = .infinity
 
@@ -2542,28 +2607,137 @@ class GameScene: SKScene {
 
         if let organism = tappedOrganism {
             // Tapped on an organism - show its stats
+            print("DEBUG: Organism tapped - ID: \(String(organism.id.uuidString.prefix(8)))")
             if selectedOrganismId == organism.id {
                 // Tapped same organism - deselect
+                print("DEBUG: Deselecting organism")
                 deselectOrganism()
                 selectedOrganismPublisher.send(nil)
             } else {
                 // Select new organism
+                print("DEBUG: Selecting organism and sending to publisher")
                 selectOrganism(organism)
                 selectedOrganismPublisher.send(organism)
             }
         } else {
-            // Tapped on empty space - deselect
+            // Tapped on empty space - deselect organism
+            print("DEBUG: Tapped empty space - deselecting")
             deselectOrganism()
             selectedOrganismPublisher.send(nil)
         }
     }
 
-    private func selectOrganism(_ organism: Organism) {
-        selectedOrganismId = organism.id
+    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
+        guard let touch = touches.first else { return }
+        let location = touch.location(in: self)
 
-        // Remove old selection indicator if exists
-        selectionIndicator?.removeFromParent()
-        selectionIndicator = nil
+        // Only handle dragging in obstacle placement mode
+        guard isPlacingObstacles else { return }
+
+        // If dragging existing obstacle
+        if let obstacle = draggedObstacle {
+            obstacle.position = location
+            dragPreview?.position = location
+            // Update the visual node
+            if let node = obstacleNodes[obstacle.id] {
+                node.position = location
+            }
+        }
+        // If creating new obstacle and drag distance is significant
+        else if isCreatingNewObstacle, let startPos = dragStartPosition {
+            let dx = location.x - startPos.x
+            let dy = location.y - startPos.y
+            let distance = sqrt(dx * dx + dy * dy)
+
+            // Start showing preview if dragged more than 20 points
+            if distance > 20 && dragPreview == nil {
+                // Determine wall orientation based on drag direction
+                let orientation: WallOrientation = abs(dx) > abs(dy) ? .horizontal : .vertical
+
+                let obstacle: Obstacle
+                switch currentObstacleType {
+                case .wall:
+                    let size = orientation == .horizontal ?
+                        CGSize(width: 100, height: 20) :
+                        CGSize(width: 20, height: 100)
+                    obstacle = Obstacle(position: location, size: size, type: .wall, wallOrientation: orientation)
+                case .rock:
+                    obstacle = Obstacle(position: location, radius: 30, type: .rock)
+                case .hazard:
+                    obstacle = Obstacle(position: location, radius: 35, type: .hazard)
+                }
+                draggedObstacle = obstacle
+                createDragPreview(for: obstacle, at: location)
+            } else if let preview = dragPreview {
+                // Update preview position
+                preview.position = location
+                draggedObstacle?.position = location
+            }
+        }
+    }
+
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+        guard let touch = touches.first else { return }
+        let location = touch.location(in: self)
+
+        // Remove preview
+        dragPreview?.removeFromParent()
+        dragPreview = nil
+
+        // If we were dragging/creating an obstacle
+        if isPlacingObstacles, let obstacle = draggedObstacle {
+            // Add the obstacle if it's new, or update existing one
+            if isCreatingNewObstacle {
+                addObstacle(obstacle)
+            } else {
+                // Update the existing obstacle's visual
+                if let node = obstacleNodes[obstacle.id] {
+                    node.position = obstacle.position
+                }
+            }
+        }
+
+        // Reset drag state
+        draggedObstacle = nil
+        dragStartPosition = nil
+        isCreatingNewObstacle = false
+    }
+
+    private func createDragPreview(for obstacle: Obstacle, at position: CGPoint) {
+        // Remove old preview
+        dragPreview?.removeFromParent()
+
+        let preview: SKShapeNode
+        switch obstacle.type {
+        case .wall:
+            preview = SKShapeNode(rectOf: obstacle.size, cornerRadius: 2)
+            preview.fillColor = SKColor.gray.withAlphaComponent(0.5)
+            preview.strokeColor = .white
+            preview.lineWidth = 2
+        case .rock:
+            preview = SKShapeNode(circleOfRadius: obstacle.radius)
+            preview.fillColor = SKColor.brown.withAlphaComponent(0.5)
+            preview.strokeColor = .white
+            preview.lineWidth = 2
+        case .hazard:
+            preview = SKShapeNode(circleOfRadius: obstacle.radius)
+            preview.fillColor = SKColor.red.withAlphaComponent(0.5)
+            preview.strokeColor = .white
+            preview.lineWidth = 2
+        }
+
+        preview.position = position
+        preview.zPosition = 50
+        preview.glowWidth = 3
+        dragPreview = preview
+        addChild(preview)
+    }
+
+    private func selectOrganism(_ organism: Organism) {
+        // Remove old selection visuals first
+        deselectOrganism()
+
+        selectedOrganismId = organism.id
 
         // Create selection indicator (pulsing ring around selected organism)
         let indicator = SKShapeNode(circleOfRadius: CGFloat(organism.effectiveRadius) + 5)
@@ -2583,9 +2757,28 @@ class GameScene: SKScene {
 
         selectionIndicator = indicator
         addChild(indicator)
+
+        // Create sense range indicator for selected organism
+        let effectiveSenseRange = getEffectiveSenseRange(for: organism)
+        let senseRangeNode = SKShapeNode(circleOfRadius: CGFloat(effectiveSenseRange))
+        senseRangeNode.strokeColor = SKColor(red: 0.5, green: 0.8, blue: 1.0, alpha: 0.5)
+        senseRangeNode.lineWidth = 2
+        senseRangeNode.fillColor = SKColor(red: 0.5, green: 0.8, blue: 1.0, alpha: 0.1)
+        senseRangeNode.position = organism.position
+        senseRangeNode.zPosition = 1
+        senseRangeNodes[organism.id] = senseRangeNode
+        addChild(senseRangeNode)
     }
 
     private func deselectOrganism() {
+        // Remove sense range indicator for previously selected organism
+        if let prevSelectedId = selectedOrganismId {
+            if let senseNode = senseRangeNodes[prevSelectedId] {
+                senseNode.removeFromParent()
+                senseRangeNodes.removeValue(forKey: prevSelectedId)
+            }
+        }
+
         selectedOrganismId = nil
 
         // Remove selection indicator

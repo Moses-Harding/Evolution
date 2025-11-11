@@ -14,6 +14,11 @@ enum ObstacleType {
     case hazard     // Dangerous area that kills organisms
 }
 
+enum WallOrientation {
+    case horizontal
+    case vertical
+}
+
 class Obstacle: Identifiable, Equatable {
     let id: UUID
     var position: CGPoint
@@ -21,14 +26,16 @@ class Obstacle: Identifiable, Equatable {
     var radius: CGFloat    // Radius for circular obstacles
     var type: ObstacleType
     var rotation: CGFloat  // Rotation angle in radians
+    var wallOrientation: WallOrientation  // Orientation for walls
 
-    init(id: UUID = UUID(), position: CGPoint, size: CGSize = CGSize(width: 50, height: 50), radius: CGFloat = 25, type: ObstacleType = .wall, rotation: CGFloat = 0) {
+    init(id: UUID = UUID(), position: CGPoint, size: CGSize = CGSize(width: 50, height: 50), radius: CGFloat = 25, type: ObstacleType = .wall, rotation: CGFloat = 0, wallOrientation: WallOrientation = .horizontal) {
         self.id = id
         self.position = position
         self.size = size
         self.radius = radius
         self.type = type
         self.rotation = rotation
+        self.wallOrientation = wallOrientation
     }
 
     // Check if a point is inside this obstacle
