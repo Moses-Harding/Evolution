@@ -12,6 +12,7 @@ struct GameConfiguration {
     var initialPopulation: Int = 10
     var initialSpeed: Int = 10
     var initialSenseRange: Int = 150
+    var initialSize: Double = 1.0
 
     // MARK: - Evolution Parameters
     var minSpeed: Int = 1
@@ -21,6 +22,10 @@ struct GameConfiguration {
     var minSenseRange: Int = 50
     var maxSenseRange: Int = 400
     var senseRangeMutationRange: Int = 20  // Sense range can mutate by ±senseRangeMutationRange
+
+    var minSize: Double = 0.5
+    var maxSize: Double = 2.0
+    var sizeMutationRange: Double = 0.15  // Size can mutate by ±sizeMutationRange
 
     // MARK: - Food Settings
     var foodPerDay: Int = 5
@@ -35,7 +40,11 @@ struct GameConfiguration {
     var spawnDistance: Double = 30.0  // How far offspring spawn from parent
 
     // MARK: - Display Settings
-    var organismRadius: Double = 10.0
+    var baseOrganismRadius: Double = 10.0  // Base radius, multiplied by size
+    var organismRadius: Double { return baseOrganismRadius }  // For compatibility
+
+    // MARK: - Size Effects
+    var sizeSpeedPenalty: Double = 0.5  // How much size reduces speed (0.0-1.0)
 
     // MARK: - Presets
     static let `default` = GameConfiguration()

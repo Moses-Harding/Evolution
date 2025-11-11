@@ -47,7 +47,7 @@ final class GameSceneTests: XCTestCase {
         let trials = 100
 
         for _ in 0..<trials {
-            let parent = Organism(speed: 10, senseRange: 150, position: .zero, generation: 0, configuration: defaultConfig)
+            let parent = Organism(speed: 10, senseRange: 150, size: 1.0, position: .zero, generation: 0, configuration: defaultConfig)
             parent.hasFoodToday = true
 
             // Simulate reproduction check using config
@@ -65,7 +65,7 @@ final class GameSceneTests: XCTestCase {
     }
 
     func testMutationRange() {
-        let parent = Organism(speed: 15, senseRange: 150, position: .zero, generation: 0, configuration: defaultConfig)
+        let parent = Organism(speed: 15, senseRange: 150, size: 1.0, position: .zero, generation: 0, configuration: defaultConfig)
 
         // Test multiple mutations
         for _ in 0..<50 {
@@ -75,18 +75,21 @@ final class GameSceneTests: XCTestCase {
 
             let senseRangeDifference = abs(child.senseRange - parent.senseRange)
             XCTAssertTrue(senseRangeDifference <= defaultConfig.senseRangeMutationRange, "Sense range mutation should be within configured range")
+
+            let sizeDifference = abs(child.size - parent.size)
+            XCTAssertTrue(sizeDifference <= defaultConfig.sizeMutationRange, "Size mutation should be within configured range")
         }
     }
 
     func testGenerationIncrement() {
-        let parent = Organism(speed: 10, senseRange: 150, position: .zero, generation: 5, configuration: defaultConfig)
+        let parent = Organism(speed: 10, senseRange: 150, size: 1.0, position: .zero, generation: 5, configuration: defaultConfig)
         let child = parent.reproduce(at: .zero)
 
         XCTAssertEqual(child.generation, 6, "Child generation should be parent + 1")
     }
 
     func testCollisionDetection() {
-        let organism = Organism(speed: 10, senseRange: 150, position: CGPoint(x: 100, y: 100), generation: 0, configuration: defaultConfig)
+        let organism = Organism(speed: 10, senseRange: 150, size: 1.0, position: CGPoint(x: 100, y: 100), generation: 0, configuration: defaultConfig)
         let food = Food(position: CGPoint(x: 105, y: 105))
 
         let dx = food.position.x - organism.position.x

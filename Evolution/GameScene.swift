@@ -17,10 +17,12 @@ class GameScene: SKScene {
     private var organisms: [Organism] = []
     private var food: [Food] = []
     private var organismNodes: [UUID: SKShapeNode] = [:]
+    private var senseRangeNodes: [UUID: SKShapeNode] = [:]  // Visual sense range indicators
     private var foodNodes: [UUID: SKShapeNode] = [:]
     private var corpsePositions: [CGPoint] = []  // Store positions of dead organisms
 
     private var currentDay: Int = 0
+    var showSenseRanges: Bool = true  // Toggle for sense range visualization
 
     // Speed control
     var timeScale: Double = 1.0  // Can be set to 2.0 for super speed
@@ -62,6 +64,7 @@ class GameScene: SKScene {
             let organism = Organism(
                 speed: configuration.initialSpeed,
                 senseRange: configuration.initialSenseRange,
+                size: configuration.initialSize,
                 position: CGPoint(x: randomX, y: randomY),
                 generation: 0,
                 configuration: configuration
@@ -144,6 +147,11 @@ class GameScene: SKScene {
                 if let node = organismNodes[organism.id] {
                     node.position = newPosition
                 }
+
+                // Update sense range indicator
+                if let senseNode = senseRangeNodes[organism.id] {
+                    senseNode.position = newPosition
+                }
             }
         }
     }
@@ -175,7 +183,7 @@ class GameScene: SKScene {
                 let dy = target.position.y - organism.position.y
                 let distance = sqrt(dx * dx + dy * dy)
 
-                let collisionDistance = CGFloat(configuration.organismRadius) + CGFloat(configuration.foodSize / 2)
+                let collisionDistance = CGFloat(organism.effectiveRadius) + CGFloat(configuration.foodSize / 2)
                 if distance < collisionDistance {
                     // Collision detected!
                     organism.hasFoodToday = true
@@ -282,11 +290,25 @@ class GameScene: SKScene {
     private func addOrganism(_ organism: Organism, animated: Bool = false) {
         organisms.append(organism)
 
-        let node = SKShapeNode(circleOfRadius: CGFloat(configuration.organismRadius))
+        // Create sense range indicator (faint circle showing detection range)
+        if showSenseRanges {
+            let senseRangeNode = SKShapeNode(circleOfRadius: CGFloat(organism.senseRange))
+            senseRangeNode.strokeColor = SKColor(white: 1.0, alpha: 0.1)
+            senseRangeNode.lineWidth = 1
+            senseRangeNode.fillColor = .clear
+            senseRangeNode.position = organism.position
+            senseRangeNode.zPosition = 1
+            senseRangeNodes[organism.id] = senseRangeNode
+            addChild(senseRangeNode)
+        }
+
+        // Create organism visual node (size-based radius)
+        let node = SKShapeNode(circleOfRadius: CGFloat(organism.effectiveRadius))
         let color = organism.color
         node.fillColor = SKColor(red: CGFloat(color.red), green: CGFloat(color.green), blue: CGFloat(color.blue), alpha: 1.0)
         node.strokeColor = .clear
         node.position = organism.position
+        node.zPosition = 10
 
         if animated {
             // Start small and invisible
@@ -327,6 +349,12 @@ class GameScene: SKScene {
     }
 
     private func removeOrganism(_ organism: Organism, animated: Bool = false) {
+        // Remove sense range indicator
+        if let senseNode = senseRangeNodes[organism.id] {
+            senseNode.removeFromParent()
+            senseRangeNodes.removeValue(forKey: organism.id)
+        }
+
         if let node = organismNodes[organism.id] {
             if animated {
                 // Get organism color for particles
@@ -419,6 +447,9 @@ class GameScene: SKScene {
             statistics.averageSenseRange = 0.0
             statistics.minSenseRange = 0
             statistics.maxSenseRange = 0
+            statistics.averageSize = 0.0
+            statistics.minSize = 0.0
+            statistics.maxSize = 0.0
         } else {
             let speeds = organisms.map { $0.speed }
             statistics.averageSpeed = Double(speeds.reduce(0, +)) / Double(speeds.count)
@@ -429,6 +460,11 @@ class GameScene: SKScene {
             statistics.averageSenseRange = Double(senseRanges.reduce(0, +)) / Double(senseRanges.count)
             statistics.minSenseRange = senseRanges.min() ?? 0
             statistics.maxSenseRange = senseRanges.max() ?? 0
+
+            let sizes = organisms.map { $0.size }
+            statistics.averageSize = sizes.reduce(0.0, +) / Double(sizes.count)
+            statistics.minSize = sizes.min() ?? 0.0
+            statistics.maxSize = sizes.max() ?? 0.0
         }
 
         statistics.organisms = organisms.map { organism in
@@ -436,6 +472,7 @@ class GameScene: SKScene {
                 id: organism.id,
                 speed: organism.speed,
                 senseRange: organism.senseRange,
+                size: organism.size,
                 generation: organism.generation,
                 hasFoodToday: organism.hasFoodToday
             )
@@ -1085,6 +1122,9 @@ struct GameStatistics {
     var averageSenseRange: Double = 0.0
     var minSenseRange: Int = 0
     var maxSenseRange: Int = 0
+    var averageSize: Double = 0.0
+    var minSize: Double = 0.0
+    var maxSize: Double = 0.0
     var births: Int = 0
     var deaths: Int = 0
     var organisms: [OrganismInfo] = []
@@ -1095,6 +1135,7 @@ struct OrganismInfo: Identifiable {
     let id: UUID
     let speed: Int
     let senseRange: Int
+    let size: Double
     let generation: Int
     let hasFoodToday: Bool
 }
