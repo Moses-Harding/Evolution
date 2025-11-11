@@ -75,9 +75,66 @@ struct LiveMetricsView: View {
 
             HStack(spacing: 12) {
                 MetricCard(title: "Births", value: "\(statistics.births)", color: .green)
-                MetricCard(title: "Deaths", value: "\(statistics.deaths)", color: .red)
+                MetricCard(title: "Deaths", value: "\(statistics.totalDeaths)", color: .red)
+            }
+
+            // Death causes breakdown if there are deaths
+            if statistics.totalDeaths > 0 {
+                DeathCausesView(statistics: statistics)
             }
         }
+    }
+}
+
+struct DeathCausesView: View {
+    let statistics: GameStatistics
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Death Causes")
+                .font(.caption)
+                .fontWeight(.semibold)
+                .foregroundColor(.gray)
+
+            HStack(spacing: 8) {
+                if statistics.deathsByStarvation > 0 {
+                    DeathCauseChip(icon: "🍽️", count: statistics.deathsByStarvation, label: "Starve")
+                }
+                if statistics.deathsByOldAge > 0 {
+                    DeathCauseChip(icon: "👴", count: statistics.deathsByOldAge, label: "Age")
+                }
+                if statistics.deathsByLowEnergy > 0 {
+                    DeathCauseChip(icon: "⚡", count: statistics.deathsByLowEnergy, label: "Energy")
+                }
+                if statistics.deathsByHazard > 0 {
+                    DeathCauseChip(icon: "☠️", count: statistics.deathsByHazard, label: "Hazard")
+                }
+            }
+        }
+        .padding(.top, 4)
+    }
+}
+
+struct DeathCauseChip: View {
+    let icon: String
+    let count: Int
+    let label: String
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Text(icon)
+                .font(.caption2)
+            Text("\(count)")
+                .font(.caption2)
+                .fontWeight(.bold)
+            Text(label)
+                .font(.caption2)
+                .foregroundColor(.gray)
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 3)
+        .background(Color.black.opacity(0.4))
+        .cornerRadius(4)
     }
 }
 

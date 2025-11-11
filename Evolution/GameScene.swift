@@ -1324,6 +1324,8 @@ class GameScene: SKScene {
                 if obstacle.collidesWith(organismPosition: organism.position, organismRadius: CGFloat(organism.effectiveRadius)) {
                     // Organism entered hazard - mark for removal
                     organismsToRemove.append(organism)
+                    // Track hazard death
+                    statistics.deathsByHazard += 1
                     // Add death effect at hazard
                     addDeathParticles(at: organism.position, color: organism.color)
                     break
@@ -1395,15 +1397,18 @@ class GameScene: SKScene {
                 deaths += 1
                 corpsePositions.append(organism.position)  // Store corpse position
 
-                // Different death animations based on cause
+                // Track death cause and use different animations
                 if organism.isStarving {
-                    // Starvation death - fade out slowly
+                    // Low energy death
+                    statistics.deathsByLowEnergy += 1
                     removeOrganism(organism, animated: true)
                 } else if organism.age >= organism.maxAge {
-                    // Old age death - peaceful fade
+                    // Old age death
+                    statistics.deathsByOldAge += 1
                     removeOrganism(organism, animated: true)
                 } else {
                     // Starvation (didn't eat)
+                    statistics.deathsByStarvation += 1
                     removeOrganism(organism, animated: true)
                 }
                 return false
@@ -1435,8 +1440,12 @@ class GameScene: SKScene {
             }
         }
 
-        // Reset births counter for next day
+        // Reset births and death cause counters for next day
         statistics.births = 0
+        statistics.deathsByStarvation = 0
+        statistics.deathsByOldAge = 0
+        statistics.deathsByHazard = 0
+        statistics.deathsByLowEnergy = 0
     }
 
     // MARK: - Organism Management
@@ -2875,12 +2884,28 @@ enum Season: String, CaseIterable {
     }
 }
 
+enum DeathCause {
+    case starvation    // Didn't eat
+    case oldAge        // Reached max age
+    case hazard        // Entered hazard zone
+    case lowEnergy     // Energy depleted
+}
+
 struct GameStatistics {
     var currentDay: Int = 0
     var population: Int = 0
     var averageSpeed: Double = 0.0
     var minSpeed: Int = 0
     var maxSpeed: Int = 0
+
+    // Death cause tracking
+    var deathsByStarvation: Int = 0
+    var deathsByOldAge: Int = 0
+    var deathsByHazard: Int = 0
+    var deathsByLowEnergy: Int = 0
+    var totalDeaths: Int {
+        return deathsByStarvation + deathsByOldAge + deathsByHazard + deathsByLowEnergy
+    }
     var averageSenseRange: Double = 0.0
     var minSenseRange: Int = 0
     var maxSenseRange: Int = 0
