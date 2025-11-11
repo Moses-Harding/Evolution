@@ -78,10 +78,12 @@ class GameScene: SKScene {
 
     // MARK: - Statistics
     var statistics: GameStatistics = GameStatistics()
+    var evolutionaryRecords: EvolutionaryRecords = EvolutionaryRecords()
 
     // MARK: - Publishers
     let statisticsPublisher = PassthroughSubject<GameStatistics, Never>()
     let selectedOrganismPublisher = PassthroughSubject<Organism?, Never>()
+    let milestonePublisher = PassthroughSubject<EvolutionaryMilestone, Never>()
 
     // MARK: - Initialization
     init(size: CGSize, configuration: GameConfiguration) {
@@ -1744,6 +1746,11 @@ class GameScene: SKScene {
                     registerSpecies(for: child, foundedOnDay: currentDay)
                     // Show speciation event label
                     showFloatingLabel(text: "NEW SPECIES!", at: clampedPosition, color: .magenta, fontSize: 16, offsetY: 50)
+
+                    // Check for first speciation milestone
+                    if let milestone = evolutionaryRecords.recordFirstSpeciation(day: currentDay, newSpeciesId: child.speciesId) {
+                        showMilestoneNotification(milestone: milestone)
+                    }
                 } else {
                     // Child inherits parent's species
                     registerSpecies(for: child, foundedOnDay: currentDay)
@@ -1784,6 +1791,11 @@ class GameScene: SKScene {
                     showFloatingLabel(text: "OLD AGE", at: organism.position, color: .gray, fontSize: 12)
                     addCorpseMarker(at: organism.position, color: organism.color)
                     removeOrganism(organism, animated: true)
+
+                    // Check for longevity record
+                    if let milestone = evolutionaryRecords.recordLongevity(organism: organism, currentDay: currentDay) {
+                        showMilestoneNotification(milestone: milestone)
+                    }
                 } else {
                     // Starvation (didn't eat)
                     statistics.deathsByStarvation += 1
@@ -1802,7 +1814,32 @@ class GameScene: SKScene {
         // Update statistics
         statistics.births = births
         statistics.deaths = deaths
+        let previousPopulation = statistics.population + deaths - births  // Calculate previous population
         updateStatistics()
+
+        // Check for evolutionary milestones
+        let speciesCount = species.count
+        let newMilestones = evolutionaryRecords.checkRecords(
+            organisms: organisms,
+            currentDay: currentDay,
+            speciesCount: speciesCount
+        )
+
+        // Show notification for each new milestone
+        for milestone in newMilestones {
+            showMilestoneNotification(milestone: milestone)
+        }
+
+        // Check for mass extinction event
+        if deaths > 0 {
+            if let milestone = evolutionaryRecords.recordMassExtinction(
+                previousPopulation: previousPopulation,
+                newPopulation: statistics.population,
+                day: currentDay
+            ) {
+                showMilestoneNotification(milestone: milestone)
+            }
+        }
 
         print("DEBUG: Day ended - Births: \(births), Deaths: \(deaths), Survivors: \(survivors.count)")
     }
@@ -3154,6 +3191,130 @@ class GameScene: SKScene {
 
         // Energy particles traveling from parent to child
         addEnergyParticles(from: parentPosition, to: childPosition)
+    }
+
+    // MARK: - Milestone Notifications
+
+    /// Shows a dramatic notification when an evolutionary milestone is achieved
+    private func showMilestoneNotification(milestone: EvolutionaryMilestone) {
+        // Publish milestone for UI
+        milestonePublisher.send(milestone)
+
+        // Determine notification color based on milestone type
+        let color = milestone.type.color
+        let skColor = colorFromString(color)
+
+        // Create main banner
+        let bannerHeight: CGFloat = 80
+        let banner = SKShapeNode(rectOf: CGSize(width: size.width * 0.8, height: bannerHeight), cornerRadius: 15)
+        banner.fillColor = skColor.withAlphaComponent(0.9)
+        banner.strokeColor = .white
+        banner.lineWidth = 3
+        banner.position = CGPoint(x: size.width / 2, y: size.height + bannerHeight)
+        banner.zPosition = 1100
+        banner.glowWidth = 5
+
+        // Add icon
+        let iconLabel = SKLabelNode(text: milestone.type.icon)
+        iconLabel.fontSize = 36
+        iconLabel.verticalAlignmentMode = .center
+        iconLabel.position = CGPoint(x: -size.width * 0.3, y: 0)
+        banner.addChild(iconLabel)
+
+        // Add title
+        let titleLabel = SKLabelNode(text: milestone.type.rawValue.uppercased())
+        titleLabel.fontName = "Helvetica-Bold"
+        titleLabel.fontSize = 22
+        titleLabel.fontColor = .white
+        titleLabel.verticalAlignmentMode = .center
+        titleLabel.horizontalAlignmentMode = .left
+        titleLabel.position = CGPoint(x: -size.width * 0.25, y: 8)
+        banner.addChild(titleLabel)
+
+        // Add description
+        let descLabel = SKLabelNode(text: milestone.description)
+        descLabel.fontName = "Helvetica"
+        descLabel.fontSize = 16
+        descLabel.fontColor = .white
+        descLabel.verticalAlignmentMode = .center
+        descLabel.horizontalAlignmentMode = .left
+        descLabel.position = CGPoint(x: -size.width * 0.25, y: -12)
+        banner.addChild(descLabel)
+
+        // Add day indicator
+        let dayLabel = SKLabelNode(text: "Day \(milestone.day)")
+        dayLabel.fontName = "Helvetica"
+        dayLabel.fontSize = 14
+        dayLabel.fontColor = .white
+        dayLabel.verticalAlignmentMode = .center
+        dayLabel.horizontalAlignmentMode = .right
+        dayLabel.position = CGPoint(x: size.width * 0.35, y: 0)
+        banner.addChild(dayLabel)
+
+        addChild(banner)
+
+        // Add celebratory sparkles
+        addMilestoneSparkles(at: CGPoint(x: size.width / 2, y: size.height * 0.75))
+
+        // Animate banner sliding down, staying briefly, then sliding up
+        let slideDown = SKAction.moveTo(y: size.height * 0.85, duration: 0.5)
+        slideDown.timingMode = .easeOut
+
+        let wait = SKAction.wait(forDuration: 3.0)
+
+        let slideUp = SKAction.moveTo(y: size.height + bannerHeight, duration: 0.5)
+        slideUp.timingMode = .easeIn
+
+        let remove = SKAction.removeFromParent()
+
+        let sequence = SKAction.sequence([slideDown, wait, slideUp, remove])
+        banner.run(sequence)
+
+        // Play celebratory sound (if implemented)
+        // run(SKAction.playSoundFileNamed("milestone.wav", waitForCompletion: false))
+    }
+
+    /// Helper to convert color string to SKColor
+    private func colorFromString(_ colorString: String) -> SKColor {
+        switch colorString {
+        case "gold": return SKColor(red: 1.0, green: 0.84, blue: 0.0, alpha: 1.0)
+        case "green": return SKColor(red: 0.0, green: 0.8, blue: 0.0, alpha: 1.0)
+        case "purple": return SKColor(red: 0.6, green: 0.2, blue: 0.8, alpha: 1.0)
+        case "blue": return SKColor(red: 0.2, green: 0.5, blue: 1.0, alpha: 1.0)
+        case "orange": return SKColor(red: 1.0, green: 0.6, blue: 0.0, alpha: 1.0)
+        case "red": return SKColor(red: 0.9, green: 0.2, blue: 0.2, alpha: 1.0)
+        case "cyan": return SKColor(red: 0.0, green: 0.8, blue: 0.9, alpha: 1.0)
+        case "magenta": return SKColor(red: 0.9, green: 0.2, blue: 0.9, alpha: 1.0)
+        default: return .white
+        }
+    }
+
+    /// Adds sparkles around milestone notification
+    private func addMilestoneSparkles(at position: CGPoint) {
+        for _ in 0..<20 {
+            let sparkle = SKShapeNode(circleOfRadius: CGFloat.random(in: 2...5))
+            sparkle.fillColor = .yellow
+            sparkle.strokeColor = .white
+            sparkle.lineWidth = 1
+            sparkle.position = position
+            sparkle.zPosition = 1099
+
+            // Random direction
+            let angle = Double.random(in: 0...(2 * .pi))
+            let distance = CGFloat.random(in: 50...150)
+            let targetX = position.x + cos(angle) * distance
+            let targetY = position.y + sin(angle) * distance
+
+            addChild(sparkle)
+
+            // Animate
+            let move = SKAction.move(to: CGPoint(x: targetX, y: targetY), duration: 1.0)
+            move.timingMode = .easeOut
+            let fade = SKAction.fadeOut(withDuration: 1.0)
+            let remove = SKAction.removeFromParent()
+
+            sparkle.run(SKAction.sequence([SKAction.group([move, fade]), remove]))
+        }
     }
 
     // MARK: - Corpse Markers
