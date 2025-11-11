@@ -32,6 +32,7 @@ class GameScene: SKScene {
     private var selectionIndicator: SKShapeNode?
 
     private var currentDay: Int = 0
+    private var currentSeason: Season = .spring
     private var dayNightProgress: Double = 0.0  // 0.0 = midnight, 0.5 = noon, 1.0 = midnight
     var showSenseRanges: Bool = true  // Toggle for sense range visualization
     var showTrails: Bool = true  // Toggle for movement trails
@@ -278,8 +279,11 @@ class GameScene: SKScene {
         }
         corpsePositions.removeAll()  // Clear corpse positions after spawning
 
+        // Calculate seasonal food amount
+        let seasonalFoodCount = getSeasonalFoodCount()
+
         // Then spawn regular food items based on current pattern
-        let positions = generateFoodPositions(count: configuration.foodPerDay, pattern: currentFoodPattern)
+        let positions = generateFoodPositions(count: seasonalFoodCount, pattern: currentFoodPattern)
         for position in positions {
             let foodItem = Food(position: position)
             addFood(foodItem)
@@ -481,6 +485,83 @@ class GameScene: SKScene {
         return 1.0
     }
 
+    // MARK: - Seasonal System
+    private func updateSeason() {
+        guard configuration.seasonsEnabled else { return }
+
+        let newSeason = getSeason(for: currentDay)
+        if newSeason != currentSeason {
+            currentSeason = newSeason
+            showSeasonTransition()
+        }
+    }
+
+    private func getSeason(for day: Int) -> Season {
+        let dayInYear = day % (configuration.daysPerSeason * 4)
+        let seasonIndex = dayInYear / configuration.daysPerSeason
+        return Season.allCases[min(seasonIndex, 3)]
+    }
+
+    private func getSeasonalFoodCount() -> Int {
+        guard configuration.seasonsEnabled else {
+            return configuration.foodPerDay
+        }
+
+        let multiplier: Double
+        switch currentSeason {
+        case .spring: multiplier = configuration.springFoodMultiplier
+        case .summer: multiplier = configuration.summerFoodMultiplier
+        case .fall: multiplier = configuration.fallFoodMultiplier
+        case .winter: multiplier = configuration.winterFoodMultiplier
+        }
+
+        return max(1, Int(Double(configuration.foodPerDay) * multiplier))
+    }
+
+    private func getSeasonalTemperatureOffset() -> Double {
+        guard configuration.seasonsEnabled else { return 0.0 }
+
+        switch currentSeason {
+        case .spring: return 0.0
+        case .summer: return configuration.summerTemperatureOffset
+        case .fall: return 0.0
+        case .winter: return configuration.winterTemperatureOffset
+        }
+    }
+
+    private func showSeasonTransition() {
+        let label = SKLabelNode(text: "\(currentSeason.emoji) \(currentSeason.rawValue)")
+        label.fontName = "Helvetica-Bold"
+        label.fontSize = 36
+        label.fontColor = currentSeason.color
+        let centerX = (playableMinX + playableMaxX) / 2
+        let topY = playableMaxY > 0 ? playableMaxY - 80 : size.height - 100
+        label.position = CGPoint(x: centerX, y: topY)
+        label.zPosition = 1000
+        label.alpha = 0
+        label.setScale(0.5)
+
+        addChild(label)
+
+        // Dramatic entrance
+        let fadeIn = SKAction.fadeIn(withDuration: 0.5)
+        let scaleUp = SKAction.scale(to: 1.2, duration: 0.5)
+        scaleUp.timingMode = .easeOut
+        let scaleDown = SKAction.scale(to: 1.0, duration: 0.3)
+        let entrance = SKAction.group([fadeIn, SKAction.sequence([scaleUp, scaleDown])])
+
+        // Wait and exit
+        let wait = SKAction.wait(forDuration: 2.0)
+        let fadeOut = SKAction.fadeOut(withDuration: 0.5)
+        let scaleOut = SKAction.scale(to: 1.5, duration: 0.5)
+        let exit = SKAction.group([fadeOut, scaleOut])
+
+        let remove = SKAction.removeFromParent()
+        let sequence = SKAction.sequence([entrance, wait, exit, remove])
+
+        label.run(sequence)
+    }
+
     // MARK: - Temperature Zone Management
     private func spawnTemperatureZones() {
         // Clear old zones
@@ -559,8 +640,8 @@ class GameScene: SKScene {
     }
 
     private func getTemperatureAt(position: CGPoint) -> Double {
-        // Start with base temperature
-        var totalTemperature = configuration.baseTemperature
+        // Start with base temperature + seasonal offset
+        var totalTemperature = configuration.baseTemperature + getSeasonalTemperatureOffset()
 
         // Add effects from all temperature zones
         for zone in temperatureZones {
@@ -617,6 +698,7 @@ class GameScene: SKScene {
             endDay()
             currentDay += 1
             statistics.currentDay = currentDay
+            updateSeason()  // Check for season change
             showDayTransition()
             spawnFood()
             resetOrganismsForNewDay()
@@ -2263,6 +2345,38 @@ class GameScene: SKScene {
 }
 
 // MARK: - Supporting Types
+enum Season: String, CaseIterable {
+    case spring = "Spring"
+    case summer = "Summer"
+    case fall = "Fall"
+    case winter = "Winter"
+
+    var emoji: String {
+        switch self {
+        case .spring: return "🌸"
+        case .summer: return "☀️"
+        case .fall: return "🍂"
+        case .winter: return "❄️"
+        }
+    }
+
+    var color: SKColor {
+        switch self {
+        case .spring: return SKColor(red: 0.5, green: 1.0, blue: 0.5, alpha: 1.0)
+        case .summer: return SKColor(red: 1.0, green: 0.9, blue: 0.3, alpha: 1.0)
+        case .fall: return SKColor(red: 1.0, green: 0.6, blue: 0.2, alpha: 1.0)
+        case .winter: return SKColor(red: 0.7, green: 0.9, blue: 1.0, alpha: 1.0)
+        }
+    }
+
+    func next() -> Season {
+        let allSeasons = Season.allCases
+        guard let currentIndex = allSeasons.firstIndex(of: self) else { return .spring }
+        let nextIndex = (currentIndex + 1) % allSeasons.count
+        return allSeasons[nextIndex]
+    }
+}
+
 struct GameStatistics {
     var currentDay: Int = 0
     var population: Int = 0

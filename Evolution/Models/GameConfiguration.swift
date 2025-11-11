@@ -112,6 +112,16 @@ struct GameConfiguration {
     var nightSenseRangeMultiplier: Double = 0.5  // Sense range reduced to 50% at night
     var nightEnergyMultiplier: Double = 0.8  // Energy consumption reduced to 80% at night (rest period)
 
+    // MARK: - Seasonal System
+    var seasonsEnabled: Bool = true
+    var daysPerSeason: Int = 10  // Number of simulation days per season
+    var springFoodMultiplier: Double = 1.3  // 30% more food in spring
+    var summerFoodMultiplier: Double = 1.2  // 20% more food in summer
+    var fallFoodMultiplier: Double = 0.9  // 10% less food in fall
+    var winterFoodMultiplier: Double = 0.6  // 40% less food in winter
+    var winterTemperatureOffset: Double = -8.0  // 8 degrees colder in winter
+    var summerTemperatureOffset: Double = 6.0  // 6 degrees warmer in summer
+
     // MARK: - Presets
     static let `default` = GameConfiguration()
 
