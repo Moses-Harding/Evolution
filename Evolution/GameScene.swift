@@ -726,12 +726,70 @@ class GameScene: SKScene {
             species[organism.speciesId]?.population += 1
         }
 
-        // Mark extinct species
+        // Mark extinct species and show notification
         for (speciesId, speciesData) in species {
             if speciesData.population == 0 && !speciesData.isExtinct {
                 species[speciesId]?.extinctOnDay = currentDay
+                // Show extinction notification
+                showExtinctionNotification(for: speciesData)
             }
         }
+    }
+
+    private func showExtinctionNotification(for species: Species) {
+        // Create extinction notification label
+        let notificationContainer = SKNode()
+        notificationContainer.zPosition = 1000
+
+        // Background
+        let background = SKShapeNode(rectOf: CGSize(width: 300, height: 70), cornerRadius: 10)
+        background.fillColor = SKColor.black.withAlphaComponent(0.8)
+        background.strokeColor = species.color
+        background.lineWidth = 3
+        background.glowWidth = 5
+        notificationContainer.addChild(background)
+
+        // Skull icon
+        let skull = SKLabelNode(text: "☠️")
+        skull.fontSize = 32
+        skull.position = CGPoint(x: -100, y: -8)
+        notificationContainer.addChild(skull)
+
+        // Extinction text
+        let extinctText = SKLabelNode(text: "EXTINCT")
+        extinctText.fontName = "Courier-Bold"
+        extinctText.fontSize = 20
+        extinctText.fontColor = .red
+        extinctText.position = CGPoint(x: 0, y: 10)
+        extinctText.horizontalAlignmentMode = .center
+        notificationContainer.addChild(extinctText)
+
+        // Species name
+        let nameText = SKLabelNode(text: species.name)
+        nameText.fontName = "Courier"
+        nameText.fontSize = 14
+        nameText.fontColor = species.color
+        nameText.position = CGPoint(x: 0, y: -10)
+        nameText.horizontalAlignmentMode = .center
+        notificationContainer.addChild(nameText)
+
+        // Position in center of screen
+        let centerX = (playableMinX + playableMaxX) / 2
+        let centerY = (playableMinY + playableMaxY) / 2
+        notificationContainer.position = CGPoint(x: centerX, y: centerY + 100)
+        notificationContainer.alpha = 0
+
+        addChild(notificationContainer)
+
+        // Animate
+        let fadeIn = SKAction.fadeIn(withDuration: 0.3)
+        let wait = SKAction.wait(forDuration: 3.0)
+        let fadeOut = SKAction.fadeOut(withDuration: 0.5)
+        let remove = SKAction.removeFromParent()
+
+        notificationContainer.run(SKAction.sequence([fadeIn, wait, fadeOut, remove]))
+
+        print("🔴 EXTINCTION: \(species.name) went extinct on day \(currentDay) (founded day \(species.foundedOnDay))")
     }
 
     private func detectSpeciation(parent: Organism, child: Organism) -> Bool {
