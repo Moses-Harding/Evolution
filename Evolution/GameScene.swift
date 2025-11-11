@@ -581,6 +581,104 @@ class GameScene: SKScene {
         }
 
         overlay.run(colorChange)
+
+        // Add particle effects for rain and snow
+        updateWeatherParticles()
+    }
+
+    private func updateWeatherParticles() {
+        // Remove old weather particles
+        childNode(withName: "weatherParticles")?.removeFromParent()
+
+        switch currentWeather.type {
+        case .rain:
+            addRainParticles()
+        case .snow:
+            addSnowParticles()
+        default:
+            break  // No particles for clear, hot, cold
+        }
+    }
+
+    private func addRainParticles() {
+        // Create rain particle emitter
+        let particlesPerSecond = 20
+        let rainParticles = SKNode()
+        rainParticles.name = "weatherParticles"
+        rainParticles.zPosition = 500
+        addChild(rainParticles)
+
+        // Spawn rain drops periodically
+        let spawnAction = SKAction.run { [weak self] in
+            guard let self = self else { return }
+
+            let drop = SKShapeNode(rectOf: CGSize(width: 2, height: 8))
+            drop.fillColor = SKColor(white: 0.7, alpha: 0.6)
+            drop.strokeColor = .clear
+            drop.position = CGPoint(
+                x: CGFloat.random(in: self.playableMinX...self.playableMaxX),
+                y: self.playableMaxY + 20
+            )
+            drop.zRotation = .pi / 8  // Slight angle
+
+            rainParticles.addChild(drop)
+
+            // Fall animation
+            let fallDistance = self.playableMaxY - self.playableMinY + 40
+            let fallDuration = 0.5
+            let fallAction = SKAction.moveBy(x: 20, y: -fallDistance, duration: fallDuration)
+            let remove = SKAction.removeFromParent()
+            drop.run(SKAction.sequence([fallAction, remove]))
+        }
+
+        let wait = SKAction.wait(forDuration: 1.0 / Double(particlesPerSecond))
+        let sequence = SKAction.sequence([spawnAction, wait])
+        let repeatForever = SKAction.repeatForever(sequence)
+        rainParticles.run(repeatForever)
+    }
+
+    private func addSnowParticles() {
+        // Create snow particle emitter
+        let particlesPerSecond = 15
+        let snowParticles = SKNode()
+        snowParticles.name = "weatherParticles"
+        snowParticles.zPosition = 500
+        addChild(snowParticles)
+
+        // Spawn snowflakes periodically
+        let spawnAction = SKAction.run { [weak self] in
+            guard let self = self else { return }
+
+            let flake = SKShapeNode(circleOfRadius: CGFloat.random(in: 2...4))
+            flake.fillColor = .white
+            flake.strokeColor = SKColor(white: 0.9, alpha: 0.8)
+            flake.lineWidth = 0.5
+            flake.alpha = CGFloat.random(in: 0.6...0.9)
+            flake.position = CGPoint(
+                x: CGFloat.random(in: self.playableMinX...self.playableMaxX),
+                y: self.playableMaxY + 20
+            )
+
+            snowParticles.addChild(flake)
+
+            // Gentle falling with sideways drift
+            let fallDistance = self.playableMaxY - self.playableMinY + 40
+            let fallDuration = TimeInterval.random(in: 2.0...3.5)
+            let driftX = CGFloat.random(in: -30...30)
+            let fallAction = SKAction.moveBy(x: driftX, y: -fallDistance, duration: fallDuration)
+
+            // Gentle rotation
+            let rotate = SKAction.rotate(byAngle: .pi * CGFloat.random(in: 1...3), duration: fallDuration)
+
+            let group = SKAction.group([fallAction, rotate])
+            let remove = SKAction.removeFromParent()
+            flake.run(SKAction.sequence([group, remove]))
+        }
+
+        let wait = SKAction.wait(forDuration: 1.0 / Double(particlesPerSecond))
+        let sequence = SKAction.sequence([spawnAction, wait])
+        let repeatForever = SKAction.repeatForever(sequence)
+        snowParticles.run(repeatForever)
     }
 
     private func showWeatherTransition() {
