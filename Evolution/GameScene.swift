@@ -18,11 +18,24 @@ class GameScene: SKScene {
     private var food: [Food] = []
     private var organismNodes: [UUID: SKShapeNode] = [:]
     private var senseRangeNodes: [UUID: SKShapeNode] = [:]  // Visual sense range indicators
+    private var trailNodes: [UUID: [SKShapeNode]] = [:]  // Movement trails
     private var foodNodes: [UUID: SKShapeNode] = [:]
     private var corpsePositions: [CGPoint] = []  // Store positions of dead organisms
 
     private var currentDay: Int = 0
     var showSenseRanges: Bool = true  // Toggle for sense range visualization
+    var showTrails: Bool = true  // Toggle for movement trails
+    private let maxTrailLength: Int = 20  // Maximum trail segments per organism
+
+    // Food distribution patterns
+    enum FoodPattern {
+        case random      // Completely random
+        case clustered   // Food spawns in clusters
+        case scattered   // Food maximally spread out
+        case ring        // Food spawns in a ring pattern
+    }
+    private var currentFoodPattern: FoodPattern = .random
+    private let patternChangeInterval: Int = 10  // Change pattern every N days
 
     // Speed control
     var timeScale: Double = 1.0  // Can be set to 2.0 for super speed
@@ -81,6 +94,11 @@ class GameScene: SKScene {
         food.removeAll()
         foodNodes.removeAll()
 
+        // Change food pattern periodically
+        if currentDay > 0 && currentDay % patternChangeInterval == 0 {
+            rotateFoodPattern()
+        }
+
         // First, spawn food at corpse positions (corpses from previous day)
         for corpsePosition in corpsePositions {
             let foodItem = Food(position: corpsePosition)
@@ -88,13 +106,122 @@ class GameScene: SKScene {
         }
         corpsePositions.removeAll()  // Clear corpse positions after spawning
 
-        // Then spawn regular food items based on configuration
-        for _ in 0..<configuration.foodPerDay {
-            let randomX = CGFloat.random(in: 20...(size.width - 20))
-            let randomY = CGFloat.random(in: 20...(size.height - 20))
-            let foodItem = Food(position: CGPoint(x: randomX, y: randomY))
+        // Then spawn regular food items based on current pattern
+        let positions = generateFoodPositions(count: configuration.foodPerDay, pattern: currentFoodPattern)
+        for position in positions {
+            let foodItem = Food(position: position)
             addFood(foodItem)
         }
+    }
+
+    private func rotateFoodPattern() {
+        let patterns: [FoodPattern] = [.random, .clustered, .scattered, .ring]
+        if let currentIndex = patterns.firstIndex(of: currentFoodPattern) {
+            let nextIndex = (currentIndex + 1) % patterns.count
+            currentFoodPattern = patterns[nextIndex]
+
+            // Show pattern change notification
+            showPatternChangeNotification()
+        }
+    }
+
+    private func generateFoodPositions(count: Int, pattern: FoodPattern) -> [CGPoint] {
+        var positions: [CGPoint] = []
+        let margin: CGFloat = 30
+        let centerX = size.width / 2
+        let centerY = size.height / 2
+
+        switch pattern {
+        case .random:
+            for _ in 0..<count {
+                let x = CGFloat.random(in: margin...(size.width - margin))
+                let y = CGFloat.random(in: margin...(size.height - margin))
+                positions.append(CGPoint(x: x, y: y))
+            }
+
+        case .clustered:
+            // Create 2-3 clusters
+            let clusterCount = Int.random(in: 2...3)
+            let itemsPerCluster = count / clusterCount
+
+            for _ in 0..<clusterCount {
+                let clusterX = CGFloat.random(in: margin...(size.width - margin))
+                let clusterY = CGFloat.random(in: margin...(size.height - margin))
+                let clusterRadius: CGFloat = 80
+
+                for _ in 0..<itemsPerCluster {
+                    let angle = CGFloat.random(in: 0...(2 * .pi))
+                    let radius = CGFloat.random(in: 0...clusterRadius)
+                    let x = clusterX + cos(angle) * radius
+                    let y = clusterY + sin(angle) * radius
+                    let clampedX = max(margin, min(size.width - margin, x))
+                    let clampedY = max(margin, min(size.height - margin, y))
+                    positions.append(CGPoint(x: clampedX, y: clampedY))
+                }
+            }
+
+            // Add remaining items randomly
+            for _ in positions.count..<count {
+                let x = CGFloat.random(in: margin...(size.width - margin))
+                let y = CGFloat.random(in: margin...(size.height - margin))
+                positions.append(CGPoint(x: x, y: y))
+            }
+
+        case .scattered:
+            // Divide area into grid and place one item per cell
+            let cols = Int(sqrt(Double(count)))
+            let rows = (count + cols - 1) / cols
+            let cellWidth = (size.width - 2 * margin) / CGFloat(cols)
+            let cellHeight = (size.height - 2 * margin) / CGFloat(rows)
+
+            for i in 0..<count {
+                let col = i % cols
+                let row = i / cols
+                let x = margin + CGFloat(col) * cellWidth + CGFloat.random(in: 0...cellWidth)
+                let y = margin + CGFloat(row) * cellHeight + CGFloat.random(in: 0...cellHeight)
+                positions.append(CGPoint(x: x, y: y))
+            }
+
+        case .ring:
+            // Spawn food in a ring around the center
+            let radius = min(size.width, size.height) / 3
+            for i in 0..<count {
+                let angle = (2 * .pi * CGFloat(i)) / CGFloat(count)
+                let radiusVariation = CGFloat.random(in: -30...30)
+                let x = centerX + cos(angle) * (radius + radiusVariation)
+                let y = centerY + sin(angle) * (radius + radiusVariation)
+                positions.append(CGPoint(x: x, y: y))
+            }
+        }
+
+        return positions
+    }
+
+    private func showPatternChangeNotification() {
+        let patternName: String
+        switch currentFoodPattern {
+        case .random: patternName = "Random"
+        case .clustered: patternName = "Clustered"
+        case .scattered: patternName = "Scattered"
+        case .ring: patternName = "Ring"
+        }
+
+        let label = SKLabelNode(text: "Environment: \(patternName)")
+        label.fontName = "Helvetica-Bold"
+        label.fontSize = 24
+        label.fontColor = .cyan
+        label.position = CGPoint(x: size.width / 2, y: size.height - 50)
+        label.zPosition = 1000
+        label.alpha = 0
+
+        addChild(label)
+
+        let fadeIn = SKAction.fadeIn(withDuration: 0.3)
+        let wait = SKAction.wait(forDuration: 2.0)
+        let fadeOut = SKAction.fadeOut(withDuration: 0.5)
+        let remove = SKAction.removeFromParent()
+
+        label.run(SKAction.sequence([fadeIn, wait, fadeOut, remove]))
     }
 
     // MARK: - Update Loop
@@ -140,8 +267,19 @@ class GameScene: SKScene {
 
             // Move towards target food
             if let target = organism.targetFood, !organism.hasFoodToday {
+                let oldPosition = organism.position
                 let newPosition = organism.move(towards: target.position, deltaTime: deltaTime)
                 organism.position = newPosition
+
+                // Add trail segment if position changed significantly
+                if showTrails {
+                    let dx = newPosition.x - oldPosition.x
+                    let dy = newPosition.y - oldPosition.y
+                    let distance = sqrt(dx * dx + dy * dy)
+                    if distance > 2.0 {  // Only add trail if moved at least 2 pixels
+                        addTrailSegment(for: organism, from: oldPosition, to: newPosition)
+                    }
+                }
 
                 // Update visual node
                 if let node = organismNodes[organism.id] {
@@ -153,6 +291,39 @@ class GameScene: SKScene {
                     senseNode.position = newPosition
                 }
             }
+        }
+    }
+
+    private func addTrailSegment(for organism: Organism, from: CGPoint, to: CGPoint) {
+        // Create trail segment
+        let path = CGMutablePath()
+        path.move(to: from)
+        path.addLine(to: to)
+
+        let trail = SKShapeNode(path: path)
+        let color = organism.color
+        trail.strokeColor = SKColor(red: CGFloat(color.red), green: CGFloat(color.green), blue: CGFloat(color.blue), alpha: 0.3)
+        trail.lineWidth = 1.5
+        trail.zPosition = 0.5
+
+        addChild(trail)
+
+        // Add to trail tracking
+        if trailNodes[organism.id] == nil {
+            trailNodes[organism.id] = []
+        }
+        trailNodes[organism.id]?.append(trail)
+
+        // Fade out trail segment over time
+        let fadeOut = SKAction.fadeOut(withDuration: 2.0)
+        let remove = SKAction.removeFromParent()
+        trail.run(SKAction.sequence([fadeOut, remove]))
+
+        // Remove old trail segments if too many
+        if let trails = trailNodes[organism.id], trails.count > maxTrailLength {
+            let oldTrail = trails.first
+            oldTrail?.removeFromParent()
+            trailNodes[organism.id]?.removeFirst()
         }
     }
 
@@ -355,6 +526,14 @@ class GameScene: SKScene {
             senseRangeNodes.removeValue(forKey: organism.id)
         }
 
+        // Remove all trail segments
+        if let trails = trailNodes[organism.id] {
+            for trail in trails {
+                trail.removeFromParent()
+            }
+            trailNodes.removeValue(forKey: organism.id)
+        }
+
         if let node = organismNodes[organism.id] {
             if animated {
                 // Get organism color for particles
@@ -496,17 +675,32 @@ class GameScene: SKScene {
 
     // MARK: - Animations
     private func showDayTransition() {
-        // Create day transition label
-        let label = SKLabelNode(text: "Day \(currentDay)")
+        // Population health indicator
+        let populationHealth = getPopulationHealth()
+        let healthColor = getHealthColor(health: populationHealth)
+        let healthEmoji = getHealthEmoji(health: populationHealth)
+
+        // Create day transition label with health indicator
+        let label = SKLabelNode(text: "Day \(currentDay) \(healthEmoji)")
         label.fontName = "Helvetica-Bold"
         label.fontSize = 48
-        label.fontColor = .white
+        label.fontColor = healthColor
         label.position = CGPoint(x: size.width / 2, y: size.height / 2)
         label.zPosition = 1000
         label.alpha = 0
         label.setScale(0.3)
 
+        // Add population info
+        let popLabel = SKLabelNode(text: "Population: \(statistics.population)")
+        popLabel.fontName = "Helvetica"
+        popLabel.fontSize = 20
+        popLabel.fontColor = .white
+        popLabel.position = CGPoint(x: size.width / 2, y: size.height / 2 - 50)
+        popLabel.zPosition = 1000
+        popLabel.alpha = 0
+
         addChild(label)
+        addChild(popLabel)
 
         // Create dramatic entrance with multiple effects
         let fadeIn = SKAction.fadeIn(withDuration: 0.4)
@@ -544,9 +738,60 @@ class GameScene: SKScene {
         let sequence = SKAction.sequence([entrance, wait, exit, remove])
 
         label.run(sequence)
+        popLabel.run(sequence)
 
         // Add expanding circle effect
         addDayTransitionRing(at: CGPoint(x: size.width / 2, y: size.height / 2))
+    }
+
+    private func getPopulationHealth() -> Double {
+        // Calculate population health based on multiple factors
+        let population = Double(statistics.population)
+        let births = Double(statistics.births)
+        let deaths = Double(statistics.deaths)
+
+        // Ideal population range
+        let idealMin: Double = 15
+        let idealMax: Double = 40
+
+        // Population size factor
+        let popFactor: Double
+        if population < idealMin {
+            popFactor = population / idealMin  // 0-1 when below ideal
+        } else if population > idealMax {
+            popFactor = max(0.5, 1.0 - (population - idealMax) / idealMax)  // Penalty for overpopulation
+        } else {
+            popFactor = 1.0  // Optimal
+        }
+
+        // Birth/death ratio
+        let totalChange = births + deaths
+        let growthFactor = totalChange > 0 ? births / totalChange : 0.5
+
+        // Combine factors
+        return (popFactor + growthFactor) / 2.0
+    }
+
+    private func getHealthColor(health: Double) -> SKColor {
+        if health > 0.7 {
+            return .green
+        } else if health > 0.4 {
+            return .yellow
+        } else {
+            return .red
+        }
+    }
+
+    private func getHealthEmoji(health: Double) -> String {
+        if health > 0.8 {
+            return "🌟"  // Thriving
+        } else if health > 0.6 {
+            return "✨"  // Healthy
+        } else if health > 0.4 {
+            return "⚠️"  // Warning
+        } else {
+            return "💀"  // Critical
+        }
     }
 
     private func showDramaticReproduction(parent: Organism, child: Organism, childPosition: CGPoint) {
