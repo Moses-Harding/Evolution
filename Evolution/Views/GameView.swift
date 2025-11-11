@@ -133,16 +133,6 @@ struct GameView: View {
                         )
                     )
                     .animation(.easeInOut(duration: 0.2), value: viewModel.selectedOrganism != nil)
-                    .onAppear {
-                        print("🟡 GameView: OrganismStatsModal appeared for organism \(organism.id)")
-                    }
-                    .onDisappear {
-                        print("🟡 GameView: OrganismStatsModal disappeared")
-                    }
-                } else {
-                    Color.clear.onAppear {
-                        print("🟡 GameView: Modal overlay is showing Color.clear (no organism selected)")
-                    }
                 }
             }
         )
@@ -297,7 +287,7 @@ struct GameControls: View {
     @Binding var showStats: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 12) {
                 // Super speed toggle
                 Button(action: {
@@ -333,6 +323,66 @@ struct GameControls: View {
                     .cornerRadius(8)
                 }
             }
+
+            // Obstacle controls
+            HStack(spacing: 12) {
+                // Obstacle placement toggle
+                Button(action: {
+                    viewModel.isPlacingObstacles.toggle()
+                }) {
+                    HStack(spacing: 6) {
+                        Image(systemName: viewModel.isPlacingObstacles ? "cube.fill" : "cube")
+                        Text(viewModel.isPlacingObstacles ? "Place" : "Select")
+                            .fontWeight(.bold)
+                    }
+                    .font(.system(size: 16))
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(viewModel.isPlacingObstacles ? Color.green : Color.gray)
+                    .foregroundColor(.white)
+                    .cornerRadius(8)
+                }
+
+                // Obstacle type picker (only show when placing)
+                if viewModel.isPlacingObstacles {
+                    Menu {
+                        Button(action: { viewModel.obstacleType = .wall }) {
+                            Label("Wall", systemImage: "rectangle.fill")
+                        }
+                        Button(action: { viewModel.obstacleType = .rock }) {
+                            Label("Rock", systemImage: "circle.fill")
+                        }
+                        Button(action: { viewModel.obstacleType = .hazard }) {
+                            Label("Hazard", systemImage: "exclamationmark.triangle.fill")
+                        }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: viewModel.obstacleType == .wall ? "rectangle.fill" : viewModel.obstacleType == .rock ? "circle.fill" : "exclamationmark.triangle.fill")
+                            Text(viewModel.obstacleTypeLabel)
+                                .fontWeight(.bold)
+                        }
+                        .font(.system(size: 16))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(Color.indigo)
+                        .foregroundColor(.white)
+                        .cornerRadius(8)
+                    }
+
+                    // Clear obstacles button
+                    Button(action: {
+                        viewModel.clearObstacles()
+                    }) {
+                        Image(systemName: "trash.fill")
+                            .font(.system(size: 16))
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(Color.red)
+                            .foregroundColor(.white)
+                            .cornerRadius(8)
+                    }
+                }
+            }
         }
     }
 }
@@ -345,11 +395,33 @@ class GameViewModel: ObservableObject {
             scene.timeScale = isSuperSpeed ? 2.0 : 1.0
         }
     }
+    @Published var isPlacingObstacles: Bool = false {
+        didSet {
+            scene.isPlacingObstacles = isPlacingObstacles
+        }
+    }
+    @Published var obstacleType: ObstacleType = .wall {
+        didSet {
+            scene.currentObstacleType = obstacleType
+        }
+    }
+
+    var obstacleTypeLabel: String {
+        switch obstacleType {
+        case .wall: return "Wall"
+        case .rock: return "Rock"
+        case .hazard: return "Hazard"
+        }
+    }
 
     let scene: GameScene
     let configuration: GameConfiguration
 
     private var cancellables = Set<AnyCancellable>()
+
+    func clearObstacles() {
+        scene.clearAllObstacles()
+    }
 
     init(configuration: GameConfiguration = .default) {
         self.configuration = configuration
@@ -370,13 +442,7 @@ class GameViewModel: ObservableObject {
         scene.selectedOrganismPublisher
             .receive(on: DispatchQueue.main)
             .sink { [weak self] organism in
-                if let organism = organism {
-                    print("🔵 GameViewModel: Received organism \(organism.id), setting selectedOrganism")
-                } else {
-                    print("🔵 GameViewModel: Received nil, clearing selectedOrganism")
-                }
                 self?.selectedOrganism = organism
-                print("🔵 GameViewModel: selectedOrganism is now \(self?.selectedOrganism?.id?.uuidString ?? "nil")")
             }
             .store(in: &cancellables)
     }

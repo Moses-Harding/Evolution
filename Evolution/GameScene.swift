@@ -16,10 +16,12 @@ class GameScene: SKScene {
     // MARK: - Game State
     private var organisms: [Organism] = []
     private var food: [Food] = []
+    private var obstacles: [Obstacle] = []
     private var organismNodes: [UUID: SKShapeNode] = [:]
     private var senseRangeNodes: [UUID: SKShapeNode] = [:]  // Visual sense range indicators
     private var trailNodes: [UUID: [SKShapeNode]] = [:]  // Movement trails
     private var foodNodes: [UUID: SKShapeNode] = [:]
+    private var obstacleNodes: [UUID: SKShapeNode] = [:]
     private var corpsePositions: [CGPoint] = []  // Store positions of dead organisms
 
     // Selection
@@ -31,6 +33,10 @@ class GameScene: SKScene {
     var showTrails: Bool = true  // Toggle for movement trails
     private let maxTrailLength: Int = 20  // Maximum trail segments per organism
     var showEliteHighlights: Bool = false  // Toggle for elite organism highlighting (disabled by default)
+
+    // Obstacle placement mode
+    var isPlacingObstacles: Bool = false
+    var currentObstacleType: ObstacleType = .wall
 
     // Food distribution patterns
     enum FoodPattern {
@@ -414,6 +420,7 @@ class GameScene: SKScene {
             // Continue movement and collision detection
             updateOrganisms(deltaTime: deltaTime)
             checkCollisions()
+            checkHazardCollisions()
         }
 
         // Update selection indicator position
@@ -455,6 +462,17 @@ class GameScene: SKScene {
                 // Clamp to playable bounds
                 newPosition.x = max(playableMinX, min(playableMaxX, newPosition.x))
                 newPosition.y = max(playableMinY, min(playableMaxY, newPosition.y))
+
+                // Check for obstacle collisions and adjust position if needed
+                for obstacle in obstacles {
+                    if obstacle.collidesWith(organismPosition: newPosition, organismRadius: CGFloat(organism.effectiveRadius)) {
+                        // Collision detected - revert to old position
+                        newPosition = oldPosition
+                        // Clear target to find a new path next frame
+                        organism.targetFood = nil
+                        break
+                    }
+                }
 
                 organism.position = newPosition
 
@@ -572,6 +590,30 @@ class GameScene: SKScene {
                     addFeedingCelebration(at: organism.position, color: organism.color)
                 }
             }
+        }
+    }
+
+    private func checkHazardCollisions() {
+        var organismsToRemove: [Organism] = []
+
+        for organism in organisms {
+            for obstacle in obstacles where obstacle.type == .hazard {
+                if obstacle.collidesWith(organismPosition: organism.position, organismRadius: CGFloat(organism.effectiveRadius)) {
+                    // Organism entered hazard - mark for removal
+                    organismsToRemove.append(organism)
+                    // Add death effect at hazard
+                    addDeathParticles(at: organism.position, color: organism.color)
+                    break
+                }
+            }
+        }
+
+        // Remove organisms that entered hazards
+        for organism in organismsToRemove {
+            removeOrganism(organism, animated: true)
+        }
+        organisms.removeAll { organism in
+            organismsToRemove.contains { $0.id == organism.id }
         }
     }
 
@@ -806,6 +848,62 @@ class GameScene: SKScene {
 
         foodNodes[foodItem.id] = node
         addChild(node)
+    }
+
+    // MARK: - Obstacle Management
+    func addObstacle(_ obstacle: Obstacle) {
+        obstacles.append(obstacle)
+
+        let node: SKShapeNode
+        switch obstacle.type {
+        case .wall:
+            node = SKShapeNode(rectOf: obstacle.size, cornerRadius: 5)
+            node.fillColor = SKColor(white: 0.3, alpha: 0.9)
+            node.strokeColor = SKColor(white: 0.5, alpha: 1.0)
+            node.lineWidth = 2
+
+        case .rock:
+            node = SKShapeNode(circleOfRadius: obstacle.radius)
+            node.fillColor = SKColor(red: 0.4, green: 0.3, blue: 0.2, alpha: 0.9)
+            node.strokeColor = SKColor(red: 0.6, green: 0.5, blue: 0.4, alpha: 1.0)
+            node.lineWidth = 2
+
+        case .hazard:
+            node = SKShapeNode(circleOfRadius: obstacle.radius)
+            node.fillColor = SKColor(red: 0.8, green: 0.1, blue: 0.1, alpha: 0.4)
+            node.strokeColor = SKColor(red: 1.0, green: 0.2, blue: 0.2, alpha: 0.8)
+            node.lineWidth = 2
+            node.glowWidth = 10
+
+            // Add pulsing animation for hazards
+            let scaleUp = SKAction.scale(to: 1.1, duration: 0.8)
+            let scaleDown = SKAction.scale(to: 1.0, duration: 0.8)
+            let pulse = SKAction.sequence([scaleUp, scaleDown])
+            let forever = SKAction.repeatForever(pulse)
+            node.run(forever, withKey: "hazardPulse")
+        }
+
+        node.position = obstacle.position
+        node.zRotation = obstacle.rotation
+        node.zPosition = 3
+        obstacleNodes[obstacle.id] = node
+        addChild(node)
+    }
+
+    func removeObstacle(_ obstacle: Obstacle) {
+        if let node = obstacleNodes[obstacle.id] {
+            node.removeFromParent()
+            obstacleNodes.removeValue(forKey: obstacle.id)
+        }
+        obstacles.removeAll { $0.id == obstacle.id }
+    }
+
+    func clearAllObstacles() {
+        for node in obstacleNodes.values {
+            node.removeFromParent()
+        }
+        obstacleNodes.removeAll()
+        obstacles.removeAll()
     }
 
     // MARK: - Statistics
@@ -1659,6 +1757,21 @@ class GameScene: SKScene {
         guard let touch = touches.first else { return }
         let location = touch.location(in: self)
 
+        // If in obstacle placement mode, place an obstacle
+        if isPlacingObstacles {
+            let obstacle: Obstacle
+            switch currentObstacleType {
+            case .wall:
+                obstacle = Obstacle(position: location, size: CGSize(width: 60, height: 60), type: .wall)
+            case .rock:
+                obstacle = Obstacle(position: location, radius: 30, type: .rock)
+            case .hazard:
+                obstacle = Obstacle(position: location, radius: 35, type: .hazard)
+            }
+            addObstacle(obstacle)
+            return
+        }
+
         // Check if tapped on an organism
         var tappedOrganism: Organism?
         var shortestDistance: CGFloat = .infinity
@@ -1681,19 +1794,15 @@ class GameScene: SKScene {
             // Tapped on an organism - show its stats
             if selectedOrganismId == organism.id {
                 // Tapped same organism - deselect
-                print("🔴 GameScene: Deselecting organism \(organism.id)")
                 deselectOrganism()
                 selectedOrganismPublisher.send(nil)
             } else {
                 // Select new organism
-                print("🟢 GameScene: Selecting organism \(organism.id)")
                 selectOrganism(organism)
-                print("🟢 GameScene: Sending organism to publisher")
                 selectedOrganismPublisher.send(organism)
             }
         } else {
             // Tapped on empty space - deselect
-            print("🔴 GameScene: Tapped empty space, deselecting")
             deselectOrganism()
             selectedOrganismPublisher.send(nil)
         }
