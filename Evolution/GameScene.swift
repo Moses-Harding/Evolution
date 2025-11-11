@@ -29,10 +29,22 @@ class GameScene: SKScene {
     private var temperatureZoneNodes: [UUID: SKShapeNode] = [:]
     private var terrainNodes: [UUID: SKShapeNode] = [:]
     private var corpsePositions: [CGPoint] = []  // Store positions of dead organisms
+    private let maxCorpsePositions: Int = 100  // Limit corpse tracking for performance
+    private var crownNodes: [UUID: SKLabelNode] = [:]  // Crown indicators for elite organisms
+    private var heatmapNodes: [[SKShapeNode]] = []  // 2D grid of heatmap cells
+    private let heatmapGridSize: Int = 20  // 20x20 grid
+    private var heatmapUpdateCounter: Int = 0  // Update heatmap every N frames
+    private var achievedPopulationMilestones: Set<Int> = []  // Track which population milestones have been achieved
 
     // Selection
     private var selectedOrganismId: UUID?
     private var selectionIndicator: SKShapeNode?
+
+    // Drag state for obstacles
+    private var draggedObstacle: Obstacle?
+    private var dragPreview: SKShapeNode?
+    private var dragStartPosition: CGPoint?
+    private var isCreatingNewObstacle: Bool = false
 
     private var currentDay: Int = 0
     private var currentSeason: Season = .spring
@@ -40,7 +52,9 @@ class GameScene: SKScene {
     private var dayNightProgress: Double = 0.0  // 0.0 = midnight, 0.5 = noon, 1.0 = midnight
     var showSenseRanges: Bool = true  // Toggle for sense range visualization
     var showTrails: Bool = true  // Toggle for movement trails
-    private let maxTrailLength: Int = 20  // Maximum trail segments per organism
+    var showHeatmap: Bool = false  // Toggle for population density heatmap
+    private let maxTrailLength: Int = 15  // Reduced for performance (was 20)
+    private var trailUpdateThreshold: CGFloat = 3.0  // Minimum distance between trail segments
     var showEliteHighlights: Bool = false  // Toggle for elite organism highlighting (disabled by default)
     private var dayNightOverlay: SKShapeNode?  // Visual overlay for day/night
     private var weatherOverlay: SKShapeNode?  // Visual overlay for weather effects
@@ -98,7 +112,7 @@ class GameScene: SKScene {
         setupDayNightOverlay()
         setupWeatherOverlay()
         updateStatistics()
-        showLegend()
+        // Legend is now shown on demand via button
     }
 
     // MARK: - Playable Bounds and Safe Areas
@@ -179,59 +193,81 @@ class GameScene: SKScene {
         legend.position = CGPoint(x: legendX, y: legendY)
 
         // Create semi-transparent background
-        let background = SKShapeNode(rectOf: CGSize(width: 220, height: 120), cornerRadius: 8)
-        background.fillColor = SKColor(white: 0.0, alpha: 0.7)
-        background.strokeColor = SKColor(white: 0.4, alpha: 0.8)
-        background.lineWidth = 1
+        let background = SKShapeNode(rectOf: CGSize(width: 240, height: 200), cornerRadius: 8)
+        background.fillColor = SKColor(white: 0.0, alpha: 0.8)
+        background.strokeColor = SKColor(white: 0.4, alpha: 0.9)
+        background.lineWidth = 2
         legend.addChild(background)
 
         // Title
-        let title = SKLabelNode(text: "LEGEND")
+        let title = SKLabelNode(text: "KEY")
         title.fontName = "Courier-Bold"
-        title.fontSize = 12
-        title.fontColor = .white
+        title.fontSize = 14
+        title.fontColor = .cyan
         title.horizontalAlignmentMode = .left
-        title.position = CGPoint(x: -100, y: 55)
+        title.position = CGPoint(x: -110, y: 90)
         legend.addChild(title)
 
         // Helper to add legend items
-        var yPos: CGFloat = 35
-        func addLegendItem(color: SKColor, glowWidth: CGFloat = 0, text: String) {
-            // Color indicator circle
-            let indicator = SKShapeNode(circleOfRadius: 6)
-            indicator.fillColor = color
-            indicator.strokeColor = .white
-            indicator.lineWidth = 1
-            indicator.glowWidth = glowWidth
-            indicator.position = CGPoint(x: -95, y: yPos)
+        var yPos: CGFloat = 65
+        func addLegendItem(color: SKColor, shape: String = "circle", text: String) {
+            // Create indicator based on shape
+            let indicator: SKShapeNode
+            if shape == "circle" {
+                indicator = SKShapeNode(circleOfRadius: 6)
+                indicator.fillColor = color
+                indicator.strokeColor = .white
+                indicator.lineWidth = 1
+            } else if shape == "square" {
+                indicator = SKShapeNode(rectOf: CGSize(width: 10, height: 10))
+                indicator.fillColor = color
+                indicator.strokeColor = .white
+                indicator.lineWidth = 1
+            } else { // rectangle
+                indicator = SKShapeNode(rectOf: CGSize(width: 14, height: 8))
+                indicator.fillColor = color
+                indicator.strokeColor = .white
+                indicator.lineWidth = 1
+            }
+            indicator.position = CGPoint(x: -105, y: yPos)
             legend.addChild(indicator)
 
             // Text label
             let label = SKLabelNode(text: text)
             label.fontName = "Courier"
-            label.fontSize = 10
+            label.fontSize = 9
             label.fontColor = .white
             label.horizontalAlignmentMode = .left
-            label.position = CGPoint(x: -82, y: yPos - 3)
+            label.position = CGPoint(x: -90, y: yPos - 3)
             legend.addChild(label)
 
-            yPos -= 18
+            yPos -= 16
         }
 
-        // Add legend items
-        addLegendItem(color: .blue, text: "Slow (low speed)")
-        addLegendItem(color: .red, text: "Fast (high speed)")
-        addLegendItem(color: .green, text: "Food")
-        addLegendItem(color: SKColor(red: 0.5, green: 0.8, blue: 1.0, alpha: 0.5), text: "Sense range")
+        // Organisms
+        addLegendItem(color: .blue, text: "Slow organism")
+        addLegendItem(color: .red, text: "Fast organism")
+        addLegendItem(color: .green, text: "Food resource")
+        addLegendItem(color: SKColor(red: 0.5, green: 0.8, blue: 1.0, alpha: 0.4), text: "Sense range (tapped)")
 
-        // Add tap instruction at bottom
-        let tapLabel = SKLabelNode(text: "Tap organism for stats")
-        tapLabel.fontName = "Courier"
-        tapLabel.fontSize = 9
-        tapLabel.fontColor = .gray
-        tapLabel.horizontalAlignmentMode = .center
-        tapLabel.position = CGPoint(x: 0, y: -60)
-        legend.addChild(tapLabel)
+        // Obstacles
+        addLegendItem(color: .gray, shape: "rectangle", text: "Wall (blocks)")
+        addLegendItem(color: SKColor.brown, shape: "circle", text: "Rock (blocks)")
+        addLegendItem(color: .red, shape: "square", text: "Hazard (kills)")
+
+        // Add instructions at bottom
+        let instructionText = """
+        Tap organism to see stats
+        and sense range
+        """
+        let instructions = SKLabelNode(text: instructionText)
+        instructions.fontName = "Courier"
+        instructions.fontSize = 8
+        instructions.fontColor = .gray
+        instructions.horizontalAlignmentMode = .center
+        instructions.numberOfLines = 2
+        instructions.position = CGPoint(x: 0, y: -95)
+        legend.addChild(instructions)
 
         addChild(legend)
     }
@@ -551,6 +587,104 @@ class GameScene: SKScene {
         }
 
         overlay.run(colorChange)
+
+        // Add particle effects for rain and snow
+        updateWeatherParticles()
+    }
+
+    private func updateWeatherParticles() {
+        // Remove old weather particles
+        childNode(withName: "weatherParticles")?.removeFromParent()
+
+        switch currentWeather.type {
+        case .rain:
+            addRainParticles()
+        case .snow:
+            addSnowParticles()
+        default:
+            break  // No particles for clear, hot, cold
+        }
+    }
+
+    private func addRainParticles() {
+        // Create rain particle emitter
+        let particlesPerSecond = 20
+        let rainParticles = SKNode()
+        rainParticles.name = "weatherParticles"
+        rainParticles.zPosition = 500
+        addChild(rainParticles)
+
+        // Spawn rain drops periodically
+        let spawnAction = SKAction.run { [weak self] in
+            guard let self = self else { return }
+
+            let drop = SKShapeNode(rectOf: CGSize(width: 2, height: 8))
+            drop.fillColor = SKColor(white: 0.7, alpha: 0.6)
+            drop.strokeColor = .clear
+            drop.position = CGPoint(
+                x: CGFloat.random(in: self.playableMinX...self.playableMaxX),
+                y: self.playableMaxY + 20
+            )
+            drop.zRotation = .pi / 8  // Slight angle
+
+            rainParticles.addChild(drop)
+
+            // Fall animation
+            let fallDistance = self.playableMaxY - self.playableMinY + 40
+            let fallDuration = 0.5
+            let fallAction = SKAction.moveBy(x: 20, y: -fallDistance, duration: fallDuration)
+            let remove = SKAction.removeFromParent()
+            drop.run(SKAction.sequence([fallAction, remove]))
+        }
+
+        let wait = SKAction.wait(forDuration: 1.0 / Double(particlesPerSecond))
+        let sequence = SKAction.sequence([spawnAction, wait])
+        let repeatForever = SKAction.repeatForever(sequence)
+        rainParticles.run(repeatForever)
+    }
+
+    private func addSnowParticles() {
+        // Create snow particle emitter
+        let particlesPerSecond = 15
+        let snowParticles = SKNode()
+        snowParticles.name = "weatherParticles"
+        snowParticles.zPosition = 500
+        addChild(snowParticles)
+
+        // Spawn snowflakes periodically
+        let spawnAction = SKAction.run { [weak self] in
+            guard let self = self else { return }
+
+            let flake = SKShapeNode(circleOfRadius: CGFloat.random(in: 2...4))
+            flake.fillColor = .white
+            flake.strokeColor = SKColor(white: 0.9, alpha: 0.8)
+            flake.lineWidth = 0.5
+            flake.alpha = CGFloat.random(in: 0.6...0.9)
+            flake.position = CGPoint(
+                x: CGFloat.random(in: self.playableMinX...self.playableMaxX),
+                y: self.playableMaxY + 20
+            )
+
+            snowParticles.addChild(flake)
+
+            // Gentle falling with sideways drift
+            let fallDistance = self.playableMaxY - self.playableMinY + 40
+            let fallDuration = TimeInterval.random(in: 2.0...3.5)
+            let driftX = CGFloat.random(in: -30...30)
+            let fallAction = SKAction.moveBy(x: driftX, y: -fallDistance, duration: fallDuration)
+
+            // Gentle rotation
+            let rotate = SKAction.rotate(byAngle: .pi * CGFloat.random(in: 1...3), duration: fallDuration)
+
+            let group = SKAction.group([fallAction, rotate])
+            let remove = SKAction.removeFromParent()
+            flake.run(SKAction.sequence([group, remove]))
+        }
+
+        let wait = SKAction.wait(forDuration: 1.0 / Double(particlesPerSecond))
+        let sequence = SKAction.sequence([spawnAction, wait])
+        let repeatForever = SKAction.repeatForever(sequence)
+        snowParticles.run(repeatForever)
     }
 
     private func showWeatherTransition() {
@@ -698,12 +832,70 @@ class GameScene: SKScene {
             species[organism.speciesId]?.population += 1
         }
 
-        // Mark extinct species
+        // Mark extinct species and show notification
         for (speciesId, speciesData) in species {
             if speciesData.population == 0 && !speciesData.isExtinct {
                 species[speciesId]?.extinctOnDay = currentDay
+                // Show extinction notification
+                showExtinctionNotification(for: speciesData)
             }
         }
+    }
+
+    private func showExtinctionNotification(for species: Species) {
+        // Create extinction notification label
+        let notificationContainer = SKNode()
+        notificationContainer.zPosition = 1000
+
+        // Background
+        let background = SKShapeNode(rectOf: CGSize(width: 300, height: 70), cornerRadius: 10)
+        background.fillColor = SKColor.black.withAlphaComponent(0.8)
+        background.strokeColor = species.color
+        background.lineWidth = 3
+        background.glowWidth = 5
+        notificationContainer.addChild(background)
+
+        // Skull icon
+        let skull = SKLabelNode(text: "☠️")
+        skull.fontSize = 32
+        skull.position = CGPoint(x: -100, y: -8)
+        notificationContainer.addChild(skull)
+
+        // Extinction text
+        let extinctText = SKLabelNode(text: "EXTINCT")
+        extinctText.fontName = "Courier-Bold"
+        extinctText.fontSize = 20
+        extinctText.fontColor = .red
+        extinctText.position = CGPoint(x: 0, y: 10)
+        extinctText.horizontalAlignmentMode = .center
+        notificationContainer.addChild(extinctText)
+
+        // Species name
+        let nameText = SKLabelNode(text: species.name)
+        nameText.fontName = "Courier"
+        nameText.fontSize = 14
+        nameText.fontColor = species.color
+        nameText.position = CGPoint(x: 0, y: -10)
+        nameText.horizontalAlignmentMode = .center
+        notificationContainer.addChild(nameText)
+
+        // Position in center of screen
+        let centerX = (playableMinX + playableMaxX) / 2
+        let centerY = (playableMinY + playableMaxY) / 2
+        notificationContainer.position = CGPoint(x: centerX, y: centerY + 100)
+        notificationContainer.alpha = 0
+
+        addChild(notificationContainer)
+
+        // Animate
+        let fadeIn = SKAction.fadeIn(withDuration: 0.3)
+        let wait = SKAction.wait(forDuration: 3.0)
+        let fadeOut = SKAction.fadeOut(withDuration: 0.5)
+        let remove = SKAction.removeFromParent()
+
+        notificationContainer.run(SKAction.sequence([fadeIn, wait, fadeOut, remove]))
+
+        print("🔴 EXTINCTION: \(species.name) went extinct on day \(currentDay) (founded day \(species.foundedOnDay))")
     }
 
     private func detectSpeciation(parent: Organism, child: Organism) -> Bool {
@@ -723,6 +915,78 @@ class GameScene: SKScene {
 
     private func getSpeciesColor(for organism: Organism) -> SKColor {
         return species[organism.speciesId]?.color ?? Species.generateColor(for: organism.speciesId)
+    }
+
+    private func getSpeedBasedColor(ratio: Double) -> SKColor {
+        // Blue (slow) → Cyan → Green → Yellow → Orange → Red (fast)
+        let clampedRatio = max(0, min(1, ratio))
+
+        if clampedRatio < 0.2 {
+            // Blue to Cyan
+            let t = clampedRatio / 0.2
+            return SKColor(
+                red: 0,
+                green: CGFloat(t * 0.8),
+                blue: 1.0,
+                alpha: 0.4
+            )
+        } else if clampedRatio < 0.4 {
+            // Cyan to Green
+            let t = (clampedRatio - 0.2) / 0.2
+            return SKColor(
+                red: 0,
+                green: CGFloat(0.8 + t * 0.2),
+                blue: CGFloat(1.0 - t),
+                alpha: 0.4
+            )
+        } else if clampedRatio < 0.6 {
+            // Green to Yellow
+            let t = (clampedRatio - 0.4) / 0.2
+            return SKColor(
+                red: CGFloat(t),
+                green: 1.0,
+                blue: 0,
+                alpha: 0.4
+            )
+        } else if clampedRatio < 0.8 {
+            // Yellow to Orange
+            let t = (clampedRatio - 0.6) / 0.2
+            return SKColor(
+                red: 1.0,
+                green: CGFloat(1.0 - t * 0.4),
+                blue: 0,
+                alpha: 0.4
+            )
+        } else {
+            // Orange to Red
+            let t = (clampedRatio - 0.8) / 0.2
+            return SKColor(
+                red: 1.0,
+                green: CGFloat(0.6 - t * 0.6),
+                blue: 0,
+                alpha: 0.4
+            )
+        }
+    }
+
+    private func applyAgeDarkening(color: SKColor, organism: Organism) -> SKColor {
+        // Calculate age ratio (0.0 = newborn, 1.0 = max age)
+        let ageRatio = Double(organism.age) / Double(organism.maxAge)
+
+        // Extract RGB components
+        var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
+        color.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+
+        // Apply darkening based on age (older = darker)
+        // Darkening starts becoming noticeable after 50% of max age
+        let darkeningFactor = max(0, (ageRatio - 0.5) * 2.0)  // 0.0 to 1.0
+        let darkeningAmount = CGFloat(darkeningFactor * 0.4)  // Max 40% darkening
+
+        let darkenedRed = max(0, red - darkeningAmount)
+        let darkenedGreen = max(0, green - darkeningAmount)
+        let darkenedBlue = max(0, blue - darkeningAmount)
+
+        return SKColor(red: darkenedRed, green: darkenedGreen, blue: darkenedBlue, alpha: alpha)
     }
 
     // MARK: - Terrain Management
@@ -928,12 +1192,14 @@ class GameScene: SKScene {
         // Check if day should end
         if shouldEndDay() {
             // End of day - handle reproduction and death
+            print("DEBUG: Starting day transition from day \(currentDay)")
             endDay()
             currentDay += 1
             statistics.currentDay = currentDay
             updateSeason()  // Check for season change
             updateWeather()  // Check for weather change
             showDayTransition()
+            checkFoodScarcity()  // Warn if food supply is insufficient
             spawnFood()
             resetOrganismsForNewDay()
         } else {
@@ -943,6 +1209,8 @@ class GameScene: SKScene {
             checkHazardCollisions()
             applyTemperatureEffects()
             updateEnergyBars()
+            updateCrowns()
+            updateHeatmap()
         }
 
         // Update selection indicator position
@@ -957,7 +1225,17 @@ class GameScene: SKScene {
         // Day ends when:
         // 1. All food is claimed, OR
         // 2. All organisms have eaten
-        return allFoodClaimed() || allOrganismsFed()
+        let foodClaimed = allFoodClaimed()
+        let organismsFed = allOrganismsFed()
+        let shouldEnd = foodClaimed || organismsFed
+
+        if shouldEnd {
+            print("DEBUG: Day \(currentDay) ending - Food claimed: \(foodClaimed), All fed: \(organismsFed)")
+            print("DEBUG: Food status - Total: \(food.count), Claimed: \(food.filter { $0.isClaimed }.count)")
+            print("DEBUG: Organism status - Total: \(organisms.count), Fed: \(organisms.filter { $0.hasFoodToday }.count)")
+        }
+
+        return shouldEnd
     }
 
     private func allOrganismsFed() -> Bool {
@@ -970,6 +1248,14 @@ class GameScene: SKScene {
     }
 
     private func updateOrganisms(deltaTime: TimeInterval) {
+        let unclaimedFoodCount = food.filter { !$0.isClaimed }.count
+        let organismCount = organisms.count
+
+        // Log every 60 frames (once per second at 60 FPS)
+        if Int(currentDay * 60) % 60 == 0 {
+            print("DEBUG: Day \(currentDay) - Organisms: \(organismCount), Unclaimed food: \(unclaimedFoodCount)")
+        }
+
         for organism in organisms {
             // Find nearest unclaimed food if no target
             if organism.targetFood == nil || organism.targetFood!.isClaimed {
@@ -988,14 +1274,42 @@ class GameScene: SKScene {
                 newPosition.x = max(playableMinX, min(playableMaxX, newPosition.x))
                 newPosition.y = max(playableMinY, min(playableMaxY, newPosition.y))
 
-                // Check for obstacle collisions and adjust position if needed
+                // Check for obstacle collisions and adjust position with sliding
                 var collided = false
                 for obstacle in obstacles {
                     if obstacle.collidesWith(organismPosition: newPosition, organismRadius: CGFloat(organism.effectiveRadius)) {
-                        // Collision detected - revert to old position
-                        newPosition = oldPosition
                         collided = true
-                        // Clear target to find a new path next frame
+
+                        // Try sliding along the obstacle instead of stopping completely
+                        // Try moving only horizontally
+                        let horizontalPosition = CGPoint(x: newPosition.x, y: oldPosition.y)
+                        if !obstacle.collidesWith(organismPosition: horizontalPosition, organismRadius: CGFloat(organism.effectiveRadius)) {
+                            newPosition = horizontalPosition
+                            break
+                        }
+
+                        // Try moving only vertically
+                        let verticalPosition = CGPoint(x: oldPosition.x, y: newPosition.y)
+                        if !obstacle.collidesWith(organismPosition: verticalPosition, organismRadius: CGFloat(organism.effectiveRadius)) {
+                            newPosition = verticalPosition
+                            break
+                        }
+
+                        // Can't slide, push back from obstacle
+                        let pushbackDistance: CGFloat = 2.0
+                        let dx = oldPosition.x - obstacle.position.x
+                        let dy = oldPosition.y - obstacle.position.y
+                        let distance = sqrt(dx * dx + dy * dy)
+
+                        if distance > 0.1 {
+                            let pushX = (dx / distance) * pushbackDistance
+                            let pushY = (dy / distance) * pushbackDistance
+                            newPosition = CGPoint(x: oldPosition.x + pushX, y: oldPosition.y + pushY)
+                        } else {
+                            newPosition = oldPosition
+                        }
+
+                        // Clear target to find a new path
                         organism.targetFood = nil
                         break
                     }
@@ -1003,8 +1317,9 @@ class GameScene: SKScene {
 
                 organism.position = newPosition
 
-                // Consume energy only if actually moved
-                if !collided {
+                // Consume energy only if actually moved significantly
+                let distanceMoved = sqrt(pow(newPosition.x - oldPosition.x, 2) + pow(newPosition.y - oldPosition.y, 2))
+                if distanceMoved > 0.5 {
                     organism.consumeEnergy(energyCost)
                 }
 
@@ -1013,7 +1328,7 @@ class GameScene: SKScene {
                     let dx = newPosition.x - oldPosition.x
                     let dy = newPosition.y - oldPosition.y
                     let distance = sqrt(dx * dx + dy * dy)
-                    if distance > 2.0 {  // Only add trail if moved at least 2 pixels
+                    if distance > trailUpdateThreshold {  // Use threshold to reduce trail nodes
                         addTrailSegment(for: organism, from: oldPosition, to: newPosition)
                     }
                 }
@@ -1023,7 +1338,7 @@ class GameScene: SKScene {
                     node.position = newPosition
                 }
 
-                // Update sense range indicator (position and size for day/night)
+                // Update sense range indicator (position and size for day/night) - only for selected organism
                 if let senseNode = senseRangeNodes[organism.id] {
                     senseNode.position = newPosition
 
@@ -1034,14 +1349,19 @@ class GameScene: SKScene {
                         // Recreate node with new radius (animated transition would be smoother but more complex)
                         senseNode.removeFromParent()
                         let newSenseNode = SKShapeNode(circleOfRadius: targetRadius)
-                        newSenseNode.strokeColor = SKColor(red: 0.5, green: 0.8, blue: 1.0, alpha: 0.35)
-                        newSenseNode.lineWidth = 1.5
-                        newSenseNode.fillColor = .clear
+                        newSenseNode.strokeColor = SKColor(red: 0.5, green: 0.8, blue: 1.0, alpha: 0.5)
+                        newSenseNode.lineWidth = 2
+                        newSenseNode.fillColor = SKColor(red: 0.5, green: 0.8, blue: 1.0, alpha: 0.1)
                         newSenseNode.position = newPosition
                         newSenseNode.zPosition = 1
                         senseRangeNodes[organism.id] = newSenseNode
                         addChild(newSenseNode)
                     }
+                }
+
+                // Update selection indicator position if this organism is selected
+                if organism.id == selectedOrganismId {
+                    selectionIndicator?.position = newPosition
                 }
             }
         }
@@ -1054,8 +1374,11 @@ class GameScene: SKScene {
         path.addLine(to: to)
 
         let trail = SKShapeNode(path: path)
-        let color = organism.color
-        trail.strokeColor = SKColor(red: CGFloat(color.red), green: CGFloat(color.green), blue: CGFloat(color.blue), alpha: 0.3)
+
+        // Speed-based trail color: blue (slow) to red (fast)
+        let speedRatio = Double(organism.speed - 1) / 29.0  // Normalize to 0-1 (speed range 1-30)
+        let trailColor = getSpeedBasedColor(ratio: speedRatio)
+        trail.strokeColor = trailColor
         trail.lineWidth = 1.5
         trail.zPosition = 0.5
 
@@ -1081,20 +1404,32 @@ class GameScene: SKScene {
     }
 
     private func findNearestUnclaimedFood(for organism: Organism) -> Food? {
-        var nearest: Food?
-        var nearestDistance: CGFloat = .infinity
-        let effectiveSenseRange = getEffectiveSenseRange(for: organism)
-        let maxSenseDistance = CGFloat(effectiveSenseRange)
+        // Performance optimization: Early exit if very few food items
+        guard !food.isEmpty else { return nil }
 
+        var nearest: Food?
+        var nearestDistanceSquared: CGFloat = .infinity  // Use squared distance to avoid sqrt
+        let effectiveSenseRange = getEffectiveSenseRange(for: organism)
+        let maxSenseDistanceSquared = CGFloat(effectiveSenseRange * effectiveSenseRange)
+
+        let orgX = organism.position.x
+        let orgY = organism.position.y
+
+        // Optimized loop: Check unclaimed food within sense range
         for foodItem in food where !foodItem.isClaimed {
-            let dx = foodItem.position.x - organism.position.x
-            let dy = foodItem.position.y - organism.position.y
-            let distance = sqrt(dx * dx + dy * dy)
+            let dx = foodItem.position.x - orgX
+            let dy = foodItem.position.y - orgY
+            let distanceSquared = dx * dx + dy * dy
 
             // Only consider food within sense range
-            if distance <= maxSenseDistance && distance < nearestDistance {
-                nearestDistance = distance
+            if distanceSquared <= maxSenseDistanceSquared && distanceSquared < nearestDistanceSquared {
+                nearestDistanceSquared = distanceSquared
                 nearest = foodItem
+
+                // Early exit if food is very close (< 20 units)
+                if distanceSquared < 400 {  // 20^2 = 400
+                    break
+                }
             }
         }
 
@@ -1142,16 +1477,23 @@ class GameScene: SKScene {
         }
 
         // Visual feedback for contest
-        if winner.id != organism.id && contestants.contains(where: { $0.id == organism.id }) {
-            // This organism lost the contest - show red flash
-            if let node = organismNodes[organism.id] {
-                let originalColor = node.fillColor
-                node.fillColor = SKColor.red
-                let resetColor = SKAction.run {
-                    node.fillColor = originalColor
+        if contestants.count > 1 {
+            // There was an actual contest
+            if winner.id == organism.id {
+                // This organism won the contest!
+                showFloatingLabel(text: "WIN!", at: winner.position, color: .green, fontSize: 12, offsetY: 20)
+            } else if contestants.contains(where: { $0.id == organism.id }) {
+                // This organism lost the contest - show red flash
+                showFloatingLabel(text: "LOST", at: organism.position, color: .red, fontSize: 10, offsetY: 15)
+                if let node = organismNodes[organism.id] {
+                    let originalColor = node.fillColor
+                    node.fillColor = SKColor.red
+                    let resetColor = SKAction.run {
+                        node.fillColor = originalColor
+                    }
+                    let wait = SKAction.wait(forDuration: 0.2)
+                    node.run(SKAction.sequence([wait, resetColor]))
                 }
-                let wait = SKAction.wait(forDuration: 0.2)
-                node.run(SKAction.sequence([wait, resetColor]))
             }
         }
 
@@ -1187,6 +1529,102 @@ class GameScene: SKScene {
         }
     }
 
+    private func updateCrowns() {
+        guard !organisms.isEmpty else {
+            // Remove all crowns if no organisms
+            for crown in crownNodes.values {
+                crown.removeFromParent()
+            }
+            crownNodes.removeAll()
+            return
+        }
+
+        // Determine elite organisms (top 5% or at least 1)
+        let eliteCount = max(1, organisms.count / 20)
+
+        // Find top performers in different categories
+        var eliteIds: Set<UUID> = []
+
+        // Fastest organisms
+        let fastestOrganisms = organisms.sorted { $0.speed > $1.speed }.prefix(eliteCount)
+        eliteIds.formUnion(fastestOrganisms.map { $0.id })
+
+        // Oldest organisms
+        let oldestOrganisms = organisms.sorted { $0.age > $1.age }.prefix(eliteCount)
+        eliteIds.formUnion(oldestOrganisms.map { $0.id })
+
+        // Largest organisms
+        let largestOrganisms = organisms.sorted { $0.size > $1.size }.prefix(eliteCount)
+        eliteIds.formUnion(largestOrganisms.map { $0.id })
+
+        // Highest energy organisms
+        let energizedOrganisms = organisms.sorted { $0.energy > $1.energy }.prefix(eliteCount)
+        eliteIds.formUnion(energizedOrganisms.map { $0.id })
+
+        // Most aggressive (best fighters)
+        let topFighters = organisms.sorted { $0.aggression > $1.aggression }.prefix(eliteCount)
+        eliteIds.formUnion(topFighters.map { $0.id })
+
+        // Update crowns for elite organisms
+        for organism in organisms {
+            let shouldHaveCrown = eliteIds.contains(organism.id)
+            let hasCrown = crownNodes[organism.id] != nil
+
+            if shouldHaveCrown && !hasCrown {
+                // Add new crown
+                let crown = SKLabelNode(text: "👑")
+                crown.fontSize = 16
+                crown.verticalAlignmentMode = .center
+                crown.horizontalAlignmentMode = .center
+                crown.position = CGPoint(
+                    x: organism.position.x,
+                    y: organism.position.y + CGFloat(organism.effectiveRadius) + 12
+                )
+                crown.zPosition = 15
+                addChild(crown)
+                crownNodes[organism.id] = crown
+
+                // Gentle pulsing animation
+                let scaleUp = SKAction.scale(to: 1.2, duration: 0.5)
+                scaleUp.timingMode = .easeInEaseOut
+                let scaleDown = SKAction.scale(to: 1.0, duration: 0.5)
+                scaleDown.timingMode = .easeInEaseOut
+                let pulse = SKAction.sequence([scaleUp, scaleDown])
+                let repeatPulse = SKAction.repeatForever(pulse)
+                crown.run(repeatPulse)
+
+            } else if !shouldHaveCrown && hasCrown {
+                // Remove crown
+                if let crown = crownNodes[organism.id] {
+                    crown.removeAllActions()
+                    let fadeOut = SKAction.fadeOut(withDuration: 0.3)
+                    let remove = SKAction.removeFromParent()
+                    crown.run(SKAction.sequence([fadeOut, remove]))
+                    crownNodes.removeValue(forKey: organism.id)
+                }
+
+            } else if shouldHaveCrown && hasCrown {
+                // Update position
+                if let crown = crownNodes[organism.id] {
+                    crown.position = CGPoint(
+                        x: organism.position.x,
+                        y: organism.position.y + CGFloat(organism.effectiveRadius) + 12
+                    )
+                }
+            }
+        }
+
+        // Clean up crowns for dead organisms
+        let livingIds = Set(organisms.map { $0.id })
+        for (id, crown) in crownNodes {
+            if !livingIds.contains(id) {
+                crown.removeAllActions()
+                crown.removeFromParent()
+                crownNodes.removeValue(forKey: id)
+            }
+        }
+    }
+
     private func checkCollisions() {
         for organism in organisms where !organism.hasFoodToday {
             if let target = organism.targetFood {
@@ -1206,6 +1644,9 @@ class GameScene: SKScene {
 
                         // Restore energy from eating
                         organism.gainEnergy(configuration.energyGainFromFood)
+
+                        // Show floating eat label
+                        showFloatingLabel(text: "NOM", at: organism.position, color: .yellow, fontSize: 14, offsetY: 25)
 
                         // Update visual feedback with animation
                         if let foodNode = foodNodes[target.id] {
@@ -1243,7 +1684,12 @@ class GameScene: SKScene {
                 if obstacle.collidesWith(organismPosition: organism.position, organismRadius: CGFloat(organism.effectiveRadius)) {
                     // Organism entered hazard - mark for removal
                     organismsToRemove.append(organism)
-                    // Add death effect at hazard
+                    // Track hazard death
+                    statistics.deathsByHazard += 1
+                    // Show hazard death label
+                    showFloatingLabel(text: "HAZARD!", at: organism.position, color: SKColor(red: 1.0, green: 0.2, blue: 0.2, alpha: 1.0), fontSize: 14, offsetY: 30)
+                    // Add corpse marker and death effect
+                    addCorpseMarker(at: organism.position, color: organism.color)
                     addDeathParticles(at: organism.position, color: organism.color)
                     break
                 }
@@ -1296,6 +1742,8 @@ class GameScene: SKScene {
                     // Child becomes founder of new species
                     child.speciesId = child.id
                     registerSpecies(for: child, foundedOnDay: currentDay)
+                    // Show speciation event label
+                    showFloatingLabel(text: "NEW SPECIES!", at: clampedPosition, color: .magenta, fontSize: 16, offsetY: 50)
                 } else {
                     // Child inherits parent's species
                     registerSpecies(for: child, foundedOnDay: currentDay)
@@ -1303,6 +1751,12 @@ class GameScene: SKScene {
 
                 // Show dramatic reproduction with buildup -> POP -> split
                 showDramaticReproduction(parent: organism, child: child, childPosition: clampedPosition)
+
+                // Show floating birth label
+                showFloatingLabel(text: "BIRTH!", at: clampedPosition, color: .cyan, fontSize: 16, offsetY: 40)
+
+                // Show mutation severity indicator
+                showMutationIndicator(parent: organism, child: child, at: clampedPosition)
 
                 births += 1
             }
@@ -1312,17 +1766,29 @@ class GameScene: SKScene {
         let survivors = organisms.filter { organism in
             if organism.isDead || !organism.hasFoodToday {
                 deaths += 1
-                corpsePositions.append(organism.position)  // Store corpse position
+                // Store corpse position (limit to prevent memory bloat)
+                if corpsePositions.count < maxCorpsePositions {
+                    corpsePositions.append(organism.position)
+                }
 
-                // Different death animations based on cause
+                // Track death cause and use different animations
                 if organism.isStarving {
-                    // Starvation death - fade out slowly
+                    // Low energy death
+                    statistics.deathsByLowEnergy += 1
+                    showFloatingLabel(text: "EXHAUSTED", at: organism.position, color: .orange, fontSize: 12)
+                    addCorpseMarker(at: organism.position, color: organism.color)
                     removeOrganism(organism, animated: true)
                 } else if organism.age >= organism.maxAge {
-                    // Old age death - peaceful fade
+                    // Old age death
+                    statistics.deathsByOldAge += 1
+                    showFloatingLabel(text: "OLD AGE", at: organism.position, color: .gray, fontSize: 12)
+                    addCorpseMarker(at: organism.position, color: organism.color)
                     removeOrganism(organism, animated: true)
                 } else {
                     // Starvation (didn't eat)
+                    statistics.deathsByStarvation += 1
+                    showFloatingLabel(text: "STARVED", at: organism.position, color: .red, fontSize: 12)
+                    addCorpseMarker(at: organism.position, color: organism.color)
                     removeOrganism(organism, animated: true)
                 }
                 return false
@@ -1337,6 +1803,8 @@ class GameScene: SKScene {
         statistics.births = births
         statistics.deaths = deaths
         updateStatistics()
+
+        print("DEBUG: Day ended - Births: \(births), Deaths: \(deaths), Survivors: \(survivors.count)")
     }
 
     private func resetOrganismsForNewDay() {
@@ -1352,31 +1820,26 @@ class GameScene: SKScene {
             }
         }
 
-        // Reset births counter for next day
+        // Reset births and death cause counters for next day
         statistics.births = 0
+        statistics.deathsByStarvation = 0
+        statistics.deathsByOldAge = 0
+        statistics.deathsByHazard = 0
+        statistics.deathsByLowEnergy = 0
     }
 
     // MARK: - Organism Management
     private func addOrganism(_ organism: Organism, animated: Bool = false) {
         organisms.append(organism)
 
-        // Create sense range indicator (circle showing detection range)
-        if showSenseRanges {
-            let effectiveSenseRange = getEffectiveSenseRange(for: organism)
-            let senseRangeNode = SKShapeNode(circleOfRadius: CGFloat(effectiveSenseRange))
-            senseRangeNode.strokeColor = SKColor(red: 0.5, green: 0.8, blue: 1.0, alpha: 0.35)
-            senseRangeNode.lineWidth = 1.5
-            senseRangeNode.fillColor = .clear
-            senseRangeNode.position = organism.position
-            senseRangeNode.zPosition = 1
-            senseRangeNodes[organism.id] = senseRangeNode
-            addChild(senseRangeNode)
-        }
+        // Sense range indicator is now only shown for selected organism
+        // (created in selectOrganism method)
 
         // Create organism visual node (size-based radius)
         let node = SKShapeNode(circleOfRadius: CGFloat(organism.effectiveRadius))
         let speciesColor = getSpeciesColor(for: organism)
-        node.fillColor = speciesColor
+        let ageAdjustedColor = applyAgeDarkening(color: speciesColor, organism: organism)
+        node.fillColor = ageAdjustedColor
         node.strokeColor = .clear
         node.position = organism.position
         node.zPosition = 10
@@ -1619,6 +2082,135 @@ class GameScene: SKScene {
         obstacles.removeAll()
     }
 
+    func toggleLegend(show: Bool) {
+        if show {
+            showLegend()
+        } else {
+            childNode(withName: "legend")?.removeFromParent()
+        }
+    }
+
+    func forceNextDay() {
+        print("DEBUG: Force next day triggered at day \(currentDay)")
+        endDay()
+        currentDay += 1
+        spawnFood()
+        updateStatistics()
+        print("DEBUG: Day transitioned to \(currentDay), population: \(organisms.count)")
+    }
+
+    func toggleHeatmap(show: Bool) {
+        showHeatmap = show
+        if show {
+            initializeHeatmap()
+        } else {
+            removeHeatmap()
+        }
+    }
+
+    private func initializeHeatmap() {
+        // Remove existing heatmap if any
+        removeHeatmap()
+
+        // Calculate cell size
+        let width = playableMaxX - playableMinX
+        let height = playableMaxY - playableMinY
+        let cellWidth = width / CGFloat(heatmapGridSize)
+        let cellHeight = height / CGFloat(heatmapGridSize)
+
+        // Create grid of cells
+        for row in 0..<heatmapGridSize {
+            var rowNodes: [SKShapeNode] = []
+            for col in 0..<heatmapGridSize {
+                let x = playableMinX + (CGFloat(col) * cellWidth)
+                let y = playableMinY + (CGFloat(row) * cellHeight)
+
+                let cell = SKShapeNode(rectOf: CGSize(width: cellWidth, height: cellHeight))
+                cell.position = CGPoint(x: x + cellWidth / 2, y: y + cellHeight / 2)
+                cell.fillColor = SKColor.blue.withAlphaComponent(0.0)  // Start transparent
+                cell.strokeColor = .clear
+                cell.zPosition = 1  // Below organisms but above background
+                addChild(cell)
+
+                rowNodes.append(cell)
+            }
+            heatmapNodes.append(rowNodes)
+        }
+    }
+
+    private func removeHeatmap() {
+        for row in heatmapNodes {
+            for cell in row {
+                cell.removeFromParent()
+            }
+        }
+        heatmapNodes.removeAll()
+    }
+
+    private func updateHeatmap() {
+        guard showHeatmap && !heatmapNodes.isEmpty else { return }
+
+        // Only update every 10 frames for performance
+        heatmapUpdateCounter += 1
+        if heatmapUpdateCounter < 10 {
+            return
+        }
+        heatmapUpdateCounter = 0
+
+        // Count organisms in each cell
+        let width = playableMaxX - playableMinX
+        let height = playableMaxY - playableMinY
+        let cellWidth = width / CGFloat(heatmapGridSize)
+        let cellHeight = height / CGFloat(heatmapGridSize)
+
+        // Initialize density grid
+        var density: [[Int]] = Array(repeating: Array(repeating: 0, count: heatmapGridSize), count: heatmapGridSize)
+
+        // Count organisms per cell
+        for organism in organisms {
+            let col = Int((organism.position.x - playableMinX) / cellWidth)
+            let row = Int((organism.position.y - playableMinY) / cellHeight)
+
+            // Bounds check
+            if row >= 0 && row < heatmapGridSize && col >= 0 && col < heatmapGridSize {
+                density[row][col] += 1
+            }
+        }
+
+        // Find max density for normalization
+        let maxDensity = density.flatMap { $0 }.max() ?? 1
+
+        // Update cell colors based on density
+        for row in 0..<heatmapGridSize {
+            for col in 0..<heatmapGridSize {
+                let count = density[row][col]
+                let intensity = CGFloat(count) / CGFloat(maxDensity)
+
+                // Color gradient: blue (low) -> green (medium) -> yellow -> red (high)
+                var color: SKColor
+                if intensity < 0.25 {
+                    // Blue to Cyan
+                    let t = intensity / 0.25
+                    color = SKColor(red: 0.0, green: t * 0.5, blue: 1.0, alpha: 0.3)
+                } else if intensity < 0.5 {
+                    // Cyan to Green
+                    let t = (intensity - 0.25) / 0.25
+                    color = SKColor(red: 0.0, green: 0.5 + t * 0.5, blue: 1.0 - t, alpha: 0.4)
+                } else if intensity < 0.75 {
+                    // Green to Yellow
+                    let t = (intensity - 0.5) / 0.25
+                    color = SKColor(red: t, green: 1.0, blue: 0.0, alpha: 0.5)
+                } else {
+                    // Yellow to Red
+                    let t = (intensity - 0.75) / 0.25
+                    color = SKColor(red: 1.0, green: 1.0 - t, blue: 0.0, alpha: 0.6)
+                }
+
+                heatmapNodes[row][col].fillColor = count > 0 ? color : SKColor.clear
+            }
+        }
+    }
+
     // MARK: - Statistics
     private func updateStatistics() {
         statistics.currentDay = currentDay
@@ -1713,6 +2305,32 @@ class GameScene: SKScene {
             )
         }
 
+        // Update active species information
+        statistics.activeSpecies = species.values
+            .filter { !$0.isExtinct && $0.population > 0 }
+            .map { speciesData in
+                // Calculate averages for this species
+                let speciesOrganisms = organisms.filter { $0.speciesId == speciesData.id }
+                let avgSpeed = speciesOrganisms.isEmpty ? 0.0 : Double(speciesOrganisms.map { $0.speed }.reduce(0, +)) / Double(speciesOrganisms.count)
+                let avgSize = speciesOrganisms.isEmpty ? 0.0 : speciesOrganisms.map { $0.size }.reduce(0.0, +) / Double(speciesOrganisms.count)
+                let avgAge = speciesOrganisms.isEmpty ? 0.0 : Double(speciesOrganisms.map { $0.age }.reduce(0, +)) / Double(speciesOrganisms.count)
+
+                var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
+                speciesData.color.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+
+                return SpeciesInfo(
+                    id: speciesData.id,
+                    name: speciesData.name,
+                    color: (red, green, blue),
+                    population: speciesData.population,
+                    foundedOnDay: speciesData.foundedOnDay,
+                    averageSpeed: avgSpeed,
+                    averageSize: avgSize,
+                    averageAge: avgAge
+                )
+            }
+            .sorted { $0.population > $1.population }  // Sort by population
+
         // Create snapshot
         let snapshot = DailySnapshot(
             day: currentDay,
@@ -1725,8 +2343,281 @@ class GameScene: SKScene {
         )
         statistics.dailySnapshots.append(snapshot)
 
+        // Update milestones
+        updateMilestones()
+
         // Publish update
         statisticsPublisher.send(statistics)
+    }
+
+    private func checkPopulationAchievements() {
+        let population = organisms.count
+        let milestones = [10, 25, 50, 75, 100, 150, 200, 300, 500, 1000]
+
+        for milestone in milestones {
+            if population >= milestone && !achievedPopulationMilestones.contains(milestone) {
+                achievedPopulationMilestones.insert(milestone)
+                showPopulationAchievement(milestone: milestone)
+            }
+        }
+    }
+
+    private func showPopulationAchievement(milestone: Int) {
+        let centerX = (playableMinX + playableMaxX) / 2
+        let centerY = (playableMinY + playableMaxY) / 2
+
+        // Determine achievement tier and visual style
+        let (emoji, color, message): (String, SKColor, String) = {
+            switch milestone {
+            case 10:
+                return ("🎉", SKColor.green, "FIRST COMMUNITY!")
+            case 25:
+                return ("🌱", SKColor(red: 0.3, green: 0.8, blue: 0.3, alpha: 1.0), "GROWING STRONG!")
+            case 50:
+                return ("🌿", SKColor(red: 0.2, green: 0.9, blue: 0.4, alpha: 1.0), "THRIVING ECOSYSTEM!")
+            case 100:
+                return ("🌳", SKColor(red: 0.0, green: 1.0, blue: 0.5, alpha: 1.0), "POPULATION BOOM!")
+            case 200:
+                return ("🏙️", SKColor.cyan, "MEGA COLONY!")
+            case 500:
+                return ("🌍", SKColor(red: 0.2, green: 0.6, blue: 1.0, alpha: 1.0), "WORLD DOMINATION!")
+            case 1000:
+                return ("👑", SKColor(red: 1.0, green: 0.8, blue: 0.0, alpha: 1.0), "LEGENDARY EMPIRE!")
+            default:
+                return ("⭐", SKColor.yellow, "MILESTONE ACHIEVED!")
+            }
+        }()
+
+        // Large center announcement
+        let mainLabel = SKLabelNode(text: "\(emoji) \(milestone) ORGANISMS! \(emoji)")
+        mainLabel.fontName = "Courier-Bold"
+        mainLabel.fontSize = 32
+        mainLabel.fontColor = color
+        mainLabel.position = CGPoint(x: centerX, y: centerY + 20)
+        mainLabel.zPosition = 200
+        mainLabel.alpha = 0
+        addChild(mainLabel)
+
+        let subLabel = SKLabelNode(text: message)
+        subLabel.fontName = "Courier-Bold"
+        subLabel.fontSize = 18
+        subLabel.fontColor = .white
+        subLabel.position = CGPoint(x: centerX, y: centerY - 20)
+        subLabel.zPosition = 200
+        subLabel.alpha = 0
+        addChild(subLabel)
+
+        // Animated entrance
+        let fadeIn = SKAction.fadeIn(withDuration: 0.3)
+        let scaleUp = SKAction.scale(to: 1.2, duration: 0.3)
+        scaleUp.timingMode = .easeOut
+        let scaleDown = SKAction.scale(to: 1.0, duration: 0.2)
+        let wait = SKAction.wait(forDuration: 2.0)
+        let fadeOut = SKAction.fadeOut(withDuration: 0.5)
+        let remove = SKAction.removeFromParent()
+
+        let mainSequence = SKAction.sequence([
+            SKAction.group([fadeIn, scaleUp]),
+            scaleDown,
+            wait,
+            fadeOut,
+            remove
+        ])
+
+        mainLabel.run(mainSequence)
+        subLabel.run(SKAction.sequence([fadeIn, wait, fadeOut, remove]))
+
+        // Fireworks effect around the screen
+        addFireworksEffect(at: CGPoint(x: centerX, y: centerY), color: color)
+
+        // Flash effect
+        let flash = SKShapeNode(rectOf: CGSize(width: playableMaxX - playableMinX, height: playableMaxY - playableMinY))
+        flash.position = CGPoint(x: centerX, y: centerY)
+        flash.fillColor = color
+        flash.strokeColor = .clear
+        flash.alpha = 0
+        flash.zPosition = 199
+        addChild(flash)
+
+        let flashIn = SKAction.fadeAlpha(to: 0.3, duration: 0.1)
+        let flashOut = SKAction.fadeOut(withDuration: 0.3)
+        flash.run(SKAction.sequence([flashIn, flashOut, remove]))
+    }
+
+    private func addFireworksEffect(at position: CGPoint, color: SKColor) {
+        let positions = [
+            CGPoint(x: playableMinX + 50, y: playableMaxY - 50),
+            CGPoint(x: playableMaxX - 50, y: playableMaxY - 50),
+            CGPoint(x: playableMinX + 50, y: playableMinY + 50),
+            CGPoint(x: playableMaxX - 50, y: playableMinY + 50),
+            position
+        ]
+
+        for (index, pos) in positions.enumerated() {
+            let delay = Double(index) * 0.15
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                guard let self = self else { return }
+
+                // Create burst of particles
+                for _ in 0..<12 {
+                    let angle = CGFloat.random(in: 0...(2 * .pi))
+                    let distance = CGFloat.random(in: 30...60)
+                    let dx = cos(angle) * distance
+                    let dy = sin(angle) * distance
+
+                    let particle = SKShapeNode(circleOfRadius: 3)
+                    particle.fillColor = color
+                    particle.strokeColor = .clear
+                    particle.position = pos
+                    particle.zPosition = 150
+                    self.addChild(particle)
+
+                    let move = SKAction.moveBy(x: dx, y: dy, duration: 0.8)
+                    move.timingMode = .easeOut
+                    let fadeOut = SKAction.fadeOut(withDuration: 0.6)
+                    let remove = SKAction.removeFromParent()
+
+                    particle.run(SKAction.sequence([SKAction.group([move, fadeOut]), remove]))
+                }
+
+                // Add a star burst at the center
+                let star = SKLabelNode(text: "✨")
+                star.fontSize = 24
+                star.position = pos
+                star.zPosition = 151
+                star.alpha = 0
+                self.addChild(star)
+
+                let starFadeIn = SKAction.fadeIn(withDuration: 0.1)
+                let starRotate = SKAction.rotate(byAngle: .pi * 2, duration: 0.6)
+                let starScale = SKAction.scale(to: 2.0, duration: 0.6)
+                let starFadeOut = SKAction.fadeOut(withDuration: 0.3)
+                let starRemove = SKAction.removeFromParent()
+
+                star.run(SKAction.sequence([starFadeIn, SKAction.group([starRotate, starScale, starFadeOut]), starRemove]))
+            }
+        }
+    }
+
+    private func updateMilestones() {
+        // Check fastest speed
+        if let fastest = organisms.max(by: { $0.speed < $1.speed }) {
+            let speedValue = Double(fastest.speed)
+            if statistics.milestones.fastestSpeed == nil || speedValue > statistics.milestones.fastestSpeed!.value {
+                statistics.milestones.fastestSpeed = MilestoneRecord(
+                    value: speedValue,
+                    organismId: String(fastest.id.uuidString.prefix(8)),
+                    achievedOnDay: currentDay,
+                    generation: fastest.generation
+                )
+                showFloatingLabel(text: "🏆 NEW SPEED RECORD!", at: fastest.position, color: .yellow, fontSize: 18, offsetY: 40)
+            }
+        }
+
+        // Check oldest age
+        if let oldest = organisms.max(by: { $0.age < $1.age }) {
+            let ageValue = Double(oldest.age)
+            if statistics.milestones.oldestAge == nil || ageValue > statistics.milestones.oldestAge!.value {
+                statistics.milestones.oldestAge = MilestoneRecord(
+                    value: ageValue,
+                    organismId: String(oldest.id.uuidString.prefix(8)),
+                    achievedOnDay: currentDay,
+                    generation: oldest.generation
+                )
+                showFloatingLabel(text: "🏆 OLDEST ORGANISM!", at: oldest.position, color: .cyan, fontSize: 18, offsetY: 40)
+            }
+        }
+
+        // Check largest size
+        if let largest = organisms.max(by: { $0.size < $1.size }) {
+            if statistics.milestones.largestSize == nil || largest.size > statistics.milestones.largestSize!.value {
+                statistics.milestones.largestSize = MilestoneRecord(
+                    value: largest.size,
+                    organismId: String(largest.id.uuidString.prefix(8)),
+                    achievedOnDay: currentDay,
+                    generation: largest.generation
+                )
+                showFloatingLabel(text: "🏆 SIZE RECORD!", at: largest.position, color: .purple, fontSize: 18, offsetY: 40)
+            }
+        }
+
+        // Check highest energy
+        if let mostEnergized = organisms.max(by: { $0.energy < $1.energy }) {
+            if statistics.milestones.highestEnergy == nil || mostEnergized.energy > statistics.milestones.highestEnergy!.value {
+                statistics.milestones.highestEnergy = MilestoneRecord(
+                    value: mostEnergized.energy,
+                    organismId: String(mostEnergized.id.uuidString.prefix(8)),
+                    achievedOnDay: currentDay,
+                    generation: mostEnergized.generation
+                )
+                showFloatingLabel(text: "🏆 ENERGY RECORD!", at: mostEnergized.position, color: .green, fontSize: 18, offsetY: 40)
+            }
+        }
+
+        // Check deepest generation
+        if let deepestGen = organisms.max(by: { $0.generation < $1.generation }) {
+            let genValue = Double(deepestGen.generation)
+            if statistics.milestones.deepestGeneration == nil || genValue > statistics.milestones.deepestGeneration!.value {
+                statistics.milestones.deepestGeneration = MilestoneRecord(
+                    value: genValue,
+                    organismId: String(deepestGen.id.uuidString.prefix(8)),
+                    achievedOnDay: currentDay,
+                    generation: deepestGen.generation
+                )
+                showFloatingLabel(text: "🏆 GEN \(deepestGen.generation)!", at: deepestGen.position, color: .orange, fontSize: 18, offsetY: 40)
+            }
+        }
+
+        // Check largest population
+        let popValue = Double(organisms.count)
+        if statistics.milestones.largestPopulation == nil || popValue > statistics.milestones.largestPopulation!.value {
+            statistics.milestones.largestPopulation = MilestoneRecord(
+                value: popValue,
+                organismId: "population",
+                achievedOnDay: currentDay,
+                generation: 0
+            )
+        }
+
+        // Check for population achievement milestones
+        checkPopulationAchievements()
+
+        // Check most aggressive
+        if let mostAggressive = organisms.max(by: { $0.aggression < $1.aggression }) {
+            if statistics.milestones.mostAggressive == nil || mostAggressive.aggression > statistics.milestones.mostAggressive!.value {
+                statistics.milestones.mostAggressive = MilestoneRecord(
+                    value: mostAggressive.aggression,
+                    organismId: String(mostAggressive.id.uuidString.prefix(8)),
+                    achievedOnDay: currentDay,
+                    generation: mostAggressive.generation
+                )
+            }
+        }
+
+        // Check highest defense
+        if let bestDefender = organisms.max(by: { $0.defense < $1.defense }) {
+            if statistics.milestones.highestDefense == nil || bestDefender.defense > statistics.milestones.highestDefense!.value {
+                statistics.milestones.highestDefense = MilestoneRecord(
+                    value: bestDefender.defense,
+                    organismId: String(bestDefender.id.uuidString.prefix(8)),
+                    achievedOnDay: currentDay,
+                    generation: bestDefender.generation
+                )
+            }
+        }
+
+        // Check best efficiency
+        if let mostEfficient = organisms.max(by: { $0.energyEfficiency < $1.energyEfficiency }) {
+            if statistics.milestones.bestEfficiency == nil || mostEfficient.energyEfficiency > statistics.milestones.bestEfficiency!.value {
+                statistics.milestones.bestEfficiency = MilestoneRecord(
+                    value: mostEfficient.energyEfficiency,
+                    organismId: String(mostEfficient.id.uuidString.prefix(8)),
+                    achievedOnDay: currentDay,
+                    generation: mostEfficient.generation
+                )
+            }
+        }
     }
 
     private func updateEliteOrganisms() {
@@ -1836,7 +2727,7 @@ class GameScene: SKScene {
         label.alpha = 0
         label.setScale(0.3)
 
-        // Add population info
+        // Add population info with births/deaths
         let popLabel = SKLabelNode(text: "Population: \(statistics.population)")
         popLabel.fontName = "Helvetica"
         popLabel.fontSize = 20
@@ -1845,8 +2736,33 @@ class GameScene: SKScene {
         popLabel.zPosition = 1000
         popLabel.alpha = 0
 
+        // Add births/deaths summary
+        let statsLabel = SKLabelNode(text: "Births: \(statistics.births)  Deaths: \(statistics.totalDeaths)")
+        statsLabel.fontName = "Helvetica"
+        statsLabel.fontSize = 16
+        statsLabel.fontColor = statistics.births > statistics.totalDeaths ? .green : (statistics.totalDeaths > statistics.births ? .red : .gray)
+        statsLabel.position = CGPoint(x: size.width / 2, y: size.height / 2 - 75)
+        statsLabel.zPosition = 1000
+        statsLabel.alpha = 0
+
+        // Add background flash
+        let flash = SKShapeNode(rectOf: CGSize(width: size.width, height: size.height))
+        flash.fillColor = healthColor
+        flash.strokeColor = .clear
+        flash.alpha = 0
+        flash.zPosition = 999
+        flash.position = CGPoint(x: size.width / 2, y: size.height / 2)
+
+        addChild(flash)
         addChild(label)
         addChild(popLabel)
+        addChild(statsLabel)
+
+        // Flash animation
+        let flashIn = SKAction.fadeAlpha(to: 0.3, duration: 0.1)
+        let flashOut = SKAction.fadeOut(withDuration: 0.3)
+        let removeFlash = SKAction.removeFromParent()
+        flash.run(SKAction.sequence([flashIn, flashOut, removeFlash]))
 
         // Create dramatic entrance with multiple effects
         let fadeIn = SKAction.fadeIn(withDuration: 0.4)
@@ -1885,6 +2801,7 @@ class GameScene: SKScene {
 
         label.run(sequence)
         popLabel.run(sequence)
+        statsLabel.run(sequence)
 
         // Add expanding circle effect
         addDayTransitionRing(at: CGPoint(x: size.width / 2, y: size.height / 2))
@@ -2239,30 +3156,245 @@ class GameScene: SKScene {
         addEnergyParticles(from: parentPosition, to: childPosition)
     }
 
+    // MARK: - Corpse Markers
+    private func addCorpseMarker(at position: CGPoint, color: (red: Double, green: Double, blue: Double)) {
+        // Create a cross/X marker for corpse
+        let markerSize: CGFloat = 12
+        let marker = SKShapeNode()
+
+        // Draw X shape
+        let path = CGMutablePath()
+        path.move(to: CGPoint(x: -markerSize/2, y: -markerSize/2))
+        path.addLine(to: CGPoint(x: markerSize/2, y: markerSize/2))
+        path.move(to: CGPoint(x: markerSize/2, y: -markerSize/2))
+        path.addLine(to: CGPoint(x: -markerSize/2, y: markerSize/2))
+
+        marker.path = path
+        marker.strokeColor = SKColor(red: CGFloat(color.red * 0.5), green: CGFloat(color.green * 0.5), blue: CGFloat(color.blue * 0.5), alpha: 0.8)
+        marker.lineWidth = 3
+        marker.position = position
+        marker.zPosition = 2
+        marker.glowWidth = 2
+
+        addChild(marker)
+
+        // Fade out and remove after 5 seconds
+        let wait = SKAction.wait(forDuration: 5.0)
+        let fadeOut = SKAction.fadeOut(withDuration: 2.0)
+        let remove = SKAction.removeFromParent()
+        marker.run(SKAction.sequence([wait, fadeOut, remove]))
+    }
+
+    // MARK: - Mutation Indicators
+    private func showMutationIndicator(parent: Organism, child: Organism, at position: CGPoint) {
+        // Calculate mutation severity based on trait differences
+        let speedDiff = abs(Double(child.speed - parent.speed))
+        let sizeDiff = abs(child.size - parent.size)
+        let senseRangeDiff = abs(Double(child.senseRange - parent.senseRange))
+
+        // Normalize differences (approximate ranges)
+        let normalizedSpeedDiff = speedDiff / 2.0  // mutation range is ±0-2
+        let normalizedSizeDiff = sizeDiff / 0.2  // mutation range is ±0-0.2
+        let normalizedSenseDiff = senseRangeDiff / 20.0  // mutation range is ±0-20
+
+        let totalMutation = (normalizedSpeedDiff + normalizedSizeDiff + normalizedSenseDiff) / 3.0
+
+        // Only show indicator if mutation is significant
+        if totalMutation > 0.3 {
+            let (text, color, size) = if totalMutation > 0.8 {
+                ("⚡⚡⚡", SKColor.magenta, CGFloat(16))  // Major mutation
+            } else if totalMutation > 0.5 {
+                ("⚡⚡", SKColor.orange, CGFloat(14))  // Moderate mutation
+            } else {
+                ("⚡", SKColor.yellow, CGFloat(12))  // Minor mutation
+            }
+
+            // Create indicator
+            let label = SKLabelNode(text: text)
+            label.fontSize = size
+            label.position = CGPoint(x: position.x + 15, y: position.y + 10)
+            label.zPosition = 101
+            label.alpha = 0
+
+            addChild(label)
+
+            // Pulse and fade
+            let fadeIn = SKAction.fadeIn(withDuration: 0.2)
+            let pulse = SKAction.sequence([
+                SKAction.scale(to: 1.3, duration: 0.15),
+                SKAction.scale(to: 1.0, duration: 0.15)
+            ])
+            let wait = SKAction.wait(forDuration: 0.8)
+            let fadeOut = SKAction.fadeOut(withDuration: 0.3)
+            let remove = SKAction.removeFromParent()
+
+            label.run(SKAction.sequence([fadeIn, SKAction.group([pulse, wait]), fadeOut, remove]))
+        }
+    }
+
+    // MARK: - Food Scarcity Warning
+    private func checkFoodScarcity() {
+        let foodPerOrganism = Double(configuration.foodPerDay) / Double(max(1, statistics.population))
+
+        // Critical scarcity: less than 0.3 food per organism
+        if foodPerOrganism < 0.3 {
+            showScarcityWarning(level: .critical)
+        }
+        // High scarcity: less than 0.5 food per organism
+        else if foodPerOrganism < 0.5 {
+            showScarcityWarning(level: .high)
+        }
+        // Moderate scarcity: less than 0.7 food per organism
+        else if foodPerOrganism < 0.7 {
+            showScarcityWarning(level: .moderate)
+        }
+    }
+
+    private enum ScarcityLevel {
+        case moderate, high, critical
+    }
+
+    private func showScarcityWarning(level: ScarcityLevel) {
+        let (text, color, emoji) = switch level {
+        case .moderate:
+            ("FOOD SCARCE", SKColor.yellow, "⚠️")
+        case .high:
+            ("FOOD SHORTAGE", SKColor.orange, "🔴")
+        case .critical:
+            ("STARVATION!", SKColor.red, "💀")
+        }
+
+        // Create warning banner
+        let banner = SKNode()
+        banner.zPosition = 950
+
+        let centerX = (playableMinX + playableMaxX) / 2
+        let centerY = (playableMinY + playableMaxY) / 2
+
+        // Background
+        let bg = SKShapeNode(rectOf: CGSize(width: 250, height: 60), cornerRadius: 8)
+        bg.fillColor = SKColor.black.withAlphaComponent(0.8)
+        bg.strokeColor = color
+        bg.lineWidth = 3
+        bg.glowWidth = 8
+        banner.addChild(bg)
+
+        // Emoji
+        let emojiLabel = SKLabelNode(text: emoji)
+        emojiLabel.fontSize = 24
+        emojiLabel.position = CGPoint(x: -80, y: -6)
+        banner.addChild(emojiLabel)
+
+        // Warning text
+        let warningLabel = SKLabelNode(text: text)
+        warningLabel.fontName = "Courier-Bold"
+        warningLabel.fontSize = 18
+        warningLabel.fontColor = color
+        warningLabel.position = CGPoint(x: 10, y: -6)
+        warningLabel.horizontalAlignmentMode = .center
+        banner.addChild(warningLabel)
+
+        banner.position = CGPoint(x: centerX, y: centerY - 150)
+        banner.alpha = 0
+
+        addChild(banner)
+
+        // Pulse animation
+        let fadeIn = SKAction.fadeIn(withDuration: 0.3)
+        let wait = SKAction.wait(forDuration: 2.0)
+        let pulse1 = SKAction.sequence([
+            SKAction.scale(to: 1.1, duration: 0.2),
+            SKAction.scale(to: 1.0, duration: 0.2)
+        ])
+        let pulse2 = SKAction.sequence([
+            SKAction.wait(forDuration: 0.5),
+            pulse1
+        ])
+        let fadeOut = SKAction.fadeOut(withDuration: 0.4)
+        let remove = SKAction.removeFromParent()
+
+        banner.run(SKAction.sequence([fadeIn, SKAction.group([wait, pulse2]), fadeOut, remove]))
+    }
+
+    // MARK: - Floating Text Labels
+    private func showFloatingLabel(text: String, at position: CGPoint, color: SKColor = .white, fontSize: CGFloat = 14, offsetY: CGFloat = 30) {
+        let label = SKLabelNode(text: text)
+        label.fontName = "Courier-Bold"
+        label.fontSize = fontSize
+        label.fontColor = color
+        label.position = position
+        label.zPosition = 100
+        label.alpha = 0
+
+        addChild(label)
+
+        // Animate upward with fade
+        let fadeIn = SKAction.fadeIn(withDuration: 0.15)
+        let moveUp = SKAction.moveBy(x: 0, y: offsetY, duration: 0.8)
+        moveUp.timingMode = .easeOut
+        let fadeOut = SKAction.fadeOut(withDuration: 0.3)
+        let wait = SKAction.wait(forDuration: 0.5)
+        let remove = SKAction.removeFromParent()
+
+        let sequence = SKAction.sequence([fadeIn, SKAction.group([moveUp, SKAction.sequence([wait, fadeOut])]), remove])
+        label.run(sequence)
+    }
+
     // MARK: - Particle Effects
     private func addBirthParticles(at position: CGPoint, color: (red: Double, green: Double, blue: Double)) {
-        for _ in 0..<12 {
-            let particle = SKShapeNode(circleOfRadius: 3)
+        // Main burst - larger particles
+        for _ in 0..<20 {
+            let particle = SKShapeNode(circleOfRadius: CGFloat.random(in: 2...5))
             particle.fillColor = SKColor(red: CGFloat(color.red), green: CGFloat(color.green), blue: CGFloat(color.blue), alpha: 1.0)
-            particle.strokeColor = .clear
+            particle.strokeColor = .white
+            particle.lineWidth = 1
+            particle.glowWidth = 3
             particle.position = position
-            particle.zPosition = 10
+            particle.zPosition = 15
 
             addChild(particle)
 
-            // Random direction
+            // Explosive outward motion
             let angle = CGFloat.random(in: 0...(2 * .pi))
-            let distance = CGFloat.random(in: 30...60)
+            let distance = CGFloat.random(in: 40...80)
             let endX = position.x + cos(angle) * distance
             let endY = position.y + sin(angle) * distance
 
-            let move = SKAction.move(to: CGPoint(x: endX, y: endY), duration: 0.6)
-            let fadeOut = SKAction.fadeOut(withDuration: 0.6)
-            let shrink = SKAction.scale(to: 0.1, duration: 0.6)
-            let group = SKAction.group([move, fadeOut, shrink])
+            let move = SKAction.move(to: CGPoint(x: endX, y: endY), duration: 0.7)
+            move.timingMode = .easeOut
+            let fadeOut = SKAction.fadeOut(withDuration: 0.7)
+            let shrink = SKAction.scale(to: 0.1, duration: 0.7)
+            let rotate = SKAction.rotate(byAngle: .pi * 2, duration: 0.7)
+            let group = SKAction.group([move, fadeOut, shrink, rotate])
             let remove = SKAction.removeFromParent()
 
             particle.run(SKAction.sequence([group, remove]))
+        }
+
+        // Secondary sparkles - smaller, faster particles
+        for _ in 0..<30 {
+            let sparkle = SKShapeNode(circleOfRadius: 1.5)
+            sparkle.fillColor = .white
+            sparkle.strokeColor = .clear
+            sparkle.glowWidth = 5
+            sparkle.position = position
+            sparkle.zPosition = 16
+
+            addChild(sparkle)
+
+            let angle = CGFloat.random(in: 0...(2 * .pi))
+            let distance = CGFloat.random(in: 20...50)
+            let endX = position.x + cos(angle) * distance
+            let endY = position.y + sin(angle) * distance
+
+            let delay = SKAction.wait(forDuration: Double.random(in: 0...0.2))
+            let move = SKAction.move(to: CGPoint(x: endX, y: endY), duration: 0.5)
+            let fadeOut = SKAction.fadeOut(withDuration: 0.5)
+            let shrink = SKAction.scale(to: 0.05, duration: 0.5)
+            let group = SKAction.group([move, fadeOut, shrink])
+            let remove = SKAction.removeFromParent()
+
+            sparkle.run(SKAction.sequence([delay, group, remove]))
         }
     }
 
@@ -2287,30 +3419,54 @@ class GameScene: SKScene {
     }
 
     private func addDeathParticles(at position: CGPoint, color: (red: Double, green: Double, blue: Double)) {
-        for _ in 0..<20 {
-            let particle = SKShapeNode(circleOfRadius: 2)
-            particle.fillColor = SKColor(red: CGFloat(color.red), green: CGFloat(color.green), blue: CGFloat(color.blue), alpha: 1.0)
-            particle.strokeColor = .clear
+        // Main death burst - organism breaking apart
+        for _ in 0..<30 {
+            let particle = SKShapeNode(circleOfRadius: CGFloat.random(in: 1.5...4))
+            particle.fillColor = SKColor(red: CGFloat(color.red * 0.7), green: CGFloat(color.green * 0.7), blue: CGFloat(color.blue * 0.7), alpha: 1.0)
+            particle.strokeColor = SKColor(red: CGFloat(color.red), green: CGFloat(color.green), blue: CGFloat(color.blue), alpha: 0.8)
+            particle.lineWidth = 1
             particle.position = position
             particle.zPosition = 10
 
             addChild(particle)
 
-            // Explosive outward motion
+            // Explosive outward motion with gravity
             let angle = CGFloat.random(in: 0...(2 * .pi))
-            let distance = CGFloat.random(in: 40...80)
+            let distance = CGFloat.random(in: 50...100)
             let endX = position.x + cos(angle) * distance
-            let endY = position.y + sin(angle) * distance
+            let endY = position.y + sin(angle) * distance - 30  // Gravity pull down
 
             // Fast then slow
-            let move = SKAction.move(to: CGPoint(x: endX, y: endY), duration: 0.8)
+            let move = SKAction.move(to: CGPoint(x: endX, y: endY), duration: 1.0)
             move.timingMode = .easeOut
-            let fadeOut = SKAction.fadeOut(withDuration: 0.8)
-            let spin = SKAction.rotate(byAngle: .pi * CGFloat.random(in: 2...4), duration: 0.8)
-            let group = SKAction.group([move, fadeOut, spin])
+            let fadeOut = SKAction.fadeOut(withDuration: 1.0)
+            let spin = SKAction.rotate(byAngle: .pi * CGFloat.random(in: 3...6), duration: 1.0)
+            let shrink = SKAction.scale(to: 0.2, duration: 1.0)
+            let group = SKAction.group([move, fadeOut, spin, shrink])
             let remove = SKAction.removeFromParent()
 
             particle.run(SKAction.sequence([group, remove]))
+        }
+
+        // Smoke/dust particles rising
+        for _ in 0..<15 {
+            let smoke = SKShapeNode(circleOfRadius: CGFloat.random(in: 3...6))
+            smoke.fillColor = SKColor(white: 0.5, alpha: 0.4)
+            smoke.strokeColor = .clear
+            smoke.position = position
+            smoke.zPosition = 9
+
+            addChild(smoke)
+
+            let delay = SKAction.wait(forDuration: Double.random(in: 0...0.3))
+            let riseUp = SKAction.moveBy(x: CGFloat.random(in: -20...20), y: CGFloat.random(in: 40...80), duration: 1.5)
+            riseUp.timingMode = .easeOut
+            let fadeOut = SKAction.fadeOut(withDuration: 1.5)
+            let expand = SKAction.scale(to: 2.0, duration: 1.5)
+            let group = SKAction.group([riseUp, fadeOut, expand])
+            let remove = SKAction.removeFromParent()
+
+            smoke.run(SKAction.sequence([delay, group, remove]))
         }
     }
 
@@ -2506,23 +3662,27 @@ class GameScene: SKScene {
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard let touch = touches.first else { return }
         let location = touch.location(in: self)
+        dragStartPosition = location
 
-        // If in obstacle placement mode, place an obstacle
+        // If in obstacle placement mode, check if tapping existing obstacle to drag
         if isPlacingObstacles {
-            let obstacle: Obstacle
-            switch currentObstacleType {
-            case .wall:
-                obstacle = Obstacle(position: location, size: CGSize(width: 60, height: 60), type: .wall)
-            case .rock:
-                obstacle = Obstacle(position: location, radius: 30, type: .rock)
-            case .hazard:
-                obstacle = Obstacle(position: location, radius: 35, type: .hazard)
+            // Check if touched an existing obstacle
+            for obstacle in obstacles {
+                if obstacle.contains(point: location) {
+                    // Start dragging existing obstacle
+                    draggedObstacle = obstacle
+                    isCreatingNewObstacle = false
+                    createDragPreview(for: obstacle, at: location)
+                    return
+                }
             }
-            addObstacle(obstacle)
+
+            // Not touching an obstacle - will create new one if drag continues
+            isCreatingNewObstacle = true
             return
         }
 
-        // Check if tapped on an organism
+        // Not in placement mode - check for organism selection
         var tappedOrganism: Organism?
         var shortestDistance: CGFloat = .infinity
 
@@ -2542,28 +3702,137 @@ class GameScene: SKScene {
 
         if let organism = tappedOrganism {
             // Tapped on an organism - show its stats
+            print("DEBUG: Organism tapped - ID: \(String(organism.id.uuidString.prefix(8)))")
             if selectedOrganismId == organism.id {
                 // Tapped same organism - deselect
+                print("DEBUG: Deselecting organism")
                 deselectOrganism()
                 selectedOrganismPublisher.send(nil)
             } else {
                 // Select new organism
+                print("DEBUG: Selecting organism and sending to publisher")
                 selectOrganism(organism)
                 selectedOrganismPublisher.send(organism)
             }
         } else {
-            // Tapped on empty space - deselect
+            // Tapped on empty space - deselect organism
+            print("DEBUG: Tapped empty space - deselecting")
             deselectOrganism()
             selectedOrganismPublisher.send(nil)
         }
     }
 
-    private func selectOrganism(_ organism: Organism) {
-        selectedOrganismId = organism.id
+    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
+        guard let touch = touches.first else { return }
+        let location = touch.location(in: self)
 
-        // Remove old selection indicator if exists
-        selectionIndicator?.removeFromParent()
-        selectionIndicator = nil
+        // Only handle dragging in obstacle placement mode
+        guard isPlacingObstacles else { return }
+
+        // If dragging existing obstacle
+        if let obstacle = draggedObstacle {
+            obstacle.position = location
+            dragPreview?.position = location
+            // Update the visual node
+            if let node = obstacleNodes[obstacle.id] {
+                node.position = location
+            }
+        }
+        // If creating new obstacle and drag distance is significant
+        else if isCreatingNewObstacle, let startPos = dragStartPosition {
+            let dx = location.x - startPos.x
+            let dy = location.y - startPos.y
+            let distance = sqrt(dx * dx + dy * dy)
+
+            // Start showing preview if dragged more than 20 points
+            if distance > 20 && dragPreview == nil {
+                // Determine wall orientation based on drag direction
+                let orientation: WallOrientation = abs(dx) > abs(dy) ? .horizontal : .vertical
+
+                let obstacle: Obstacle
+                switch currentObstacleType {
+                case .wall:
+                    let size = orientation == .horizontal ?
+                        CGSize(width: 100, height: 20) :
+                        CGSize(width: 20, height: 100)
+                    obstacle = Obstacle(position: location, size: size, type: .wall, wallOrientation: orientation)
+                case .rock:
+                    obstacle = Obstacle(position: location, radius: 30, type: .rock)
+                case .hazard:
+                    obstacle = Obstacle(position: location, radius: 35, type: .hazard)
+                }
+                draggedObstacle = obstacle
+                createDragPreview(for: obstacle, at: location)
+            } else if let preview = dragPreview {
+                // Update preview position
+                preview.position = location
+                draggedObstacle?.position = location
+            }
+        }
+    }
+
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+        guard let touch = touches.first else { return }
+        let location = touch.location(in: self)
+
+        // Remove preview
+        dragPreview?.removeFromParent()
+        dragPreview = nil
+
+        // If we were dragging/creating an obstacle
+        if isPlacingObstacles, let obstacle = draggedObstacle {
+            // Add the obstacle if it's new, or update existing one
+            if isCreatingNewObstacle {
+                addObstacle(obstacle)
+            } else {
+                // Update the existing obstacle's visual
+                if let node = obstacleNodes[obstacle.id] {
+                    node.position = obstacle.position
+                }
+            }
+        }
+
+        // Reset drag state
+        draggedObstacle = nil
+        dragStartPosition = nil
+        isCreatingNewObstacle = false
+    }
+
+    private func createDragPreview(for obstacle: Obstacle, at position: CGPoint) {
+        // Remove old preview
+        dragPreview?.removeFromParent()
+
+        let preview: SKShapeNode
+        switch obstacle.type {
+        case .wall:
+            preview = SKShapeNode(rectOf: obstacle.size, cornerRadius: 2)
+            preview.fillColor = SKColor.gray.withAlphaComponent(0.5)
+            preview.strokeColor = .white
+            preview.lineWidth = 2
+        case .rock:
+            preview = SKShapeNode(circleOfRadius: obstacle.radius)
+            preview.fillColor = SKColor.brown.withAlphaComponent(0.5)
+            preview.strokeColor = .white
+            preview.lineWidth = 2
+        case .hazard:
+            preview = SKShapeNode(circleOfRadius: obstacle.radius)
+            preview.fillColor = SKColor.red.withAlphaComponent(0.5)
+            preview.strokeColor = .white
+            preview.lineWidth = 2
+        }
+
+        preview.position = position
+        preview.zPosition = 50
+        preview.glowWidth = 3
+        dragPreview = preview
+        addChild(preview)
+    }
+
+    private func selectOrganism(_ organism: Organism) {
+        // Remove old selection visuals first
+        deselectOrganism()
+
+        selectedOrganismId = organism.id
 
         // Create selection indicator (pulsing ring around selected organism)
         let indicator = SKShapeNode(circleOfRadius: CGFloat(organism.effectiveRadius) + 5)
@@ -2583,9 +3852,28 @@ class GameScene: SKScene {
 
         selectionIndicator = indicator
         addChild(indicator)
+
+        // Create sense range indicator for selected organism
+        let effectiveSenseRange = getEffectiveSenseRange(for: organism)
+        let senseRangeNode = SKShapeNode(circleOfRadius: CGFloat(effectiveSenseRange))
+        senseRangeNode.strokeColor = SKColor(red: 0.5, green: 0.8, blue: 1.0, alpha: 0.5)
+        senseRangeNode.lineWidth = 2
+        senseRangeNode.fillColor = SKColor(red: 0.5, green: 0.8, blue: 1.0, alpha: 0.1)
+        senseRangeNode.position = organism.position
+        senseRangeNode.zPosition = 1
+        senseRangeNodes[organism.id] = senseRangeNode
+        addChild(senseRangeNode)
     }
 
     private func deselectOrganism() {
+        // Remove sense range indicator for previously selected organism
+        if let prevSelectedId = selectedOrganismId {
+            if let senseNode = senseRangeNodes[prevSelectedId] {
+                senseNode.removeFromParent()
+                senseRangeNodes.removeValue(forKey: prevSelectedId)
+            }
+        }
+
         selectedOrganismId = nil
 
         // Remove selection indicator
@@ -2627,12 +3915,28 @@ enum Season: String, CaseIterable {
     }
 }
 
+enum DeathCause {
+    case starvation    // Didn't eat
+    case oldAge        // Reached max age
+    case hazard        // Entered hazard zone
+    case lowEnergy     // Energy depleted
+}
+
 struct GameStatistics {
     var currentDay: Int = 0
     var population: Int = 0
     var averageSpeed: Double = 0.0
     var minSpeed: Int = 0
     var maxSpeed: Int = 0
+
+    // Death cause tracking
+    var deathsByStarvation: Int = 0
+    var deathsByOldAge: Int = 0
+    var deathsByHazard: Int = 0
+    var deathsByLowEnergy: Int = 0
+    var totalDeaths: Int {
+        return deathsByStarvation + deathsByOldAge + deathsByHazard + deathsByLowEnergy
+    }
     var averageSenseRange: Double = 0.0
     var minSenseRange: Int = 0
     var maxSenseRange: Int = 0
@@ -2657,6 +3961,19 @@ struct GameStatistics {
     var deaths: Int = 0
     var organisms: [OrganismInfo] = []
     var dailySnapshots: [DailySnapshot] = []
+    var activeSpecies: [SpeciesInfo] = []  // Current living species
+    var milestones: EvolutionMilestones = EvolutionMilestones()
+}
+
+struct SpeciesInfo: Identifiable {
+    let id: UUID
+    let name: String
+    let color: (red: CGFloat, green: CGFloat, blue: CGFloat)
+    var population: Int
+    let foundedOnDay: Int
+    var averageSpeed: Double
+    var averageSize: Double
+    var averageAge: Double
 }
 
 struct OrganismInfo: Identifiable {
@@ -2676,4 +3993,23 @@ struct OrganismInfo: Identifiable {
     let age: Int
     let generation: Int
     let hasFoodToday: Bool
+}
+
+struct MilestoneRecord: Codable {
+    let value: Double
+    let organismId: String
+    let achievedOnDay: Int
+    let generation: Int
+}
+
+struct EvolutionMilestones: Codable {
+    var fastestSpeed: MilestoneRecord?
+    var oldestAge: MilestoneRecord?
+    var largestSize: MilestoneRecord?
+    var highestEnergy: MilestoneRecord?
+    var deepestGeneration: MilestoneRecord?
+    var largestPopulation: MilestoneRecord?
+    var mostAggressive: MilestoneRecord?
+    var highestDefense: MilestoneRecord?
+    var bestEfficiency: MilestoneRecord?
 }

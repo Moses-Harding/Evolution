@@ -20,6 +20,20 @@ struct StatisticsPanel: View {
                 Divider()
                     .background(Color.white.opacity(0.3))
 
+                // Species Panel - show active species
+                if !viewModel.statistics.activeSpecies.isEmpty {
+                    SpeciesPanelView(species: viewModel.statistics.activeSpecies)
+
+                    Divider()
+                        .background(Color.white.opacity(0.3))
+                }
+
+                // Milestones Panel
+                MilestonesView(milestones: viewModel.statistics.milestones)
+
+                Divider()
+                    .background(Color.white.opacity(0.3))
+
                 // Charts in tabs for better space usage
                 TabView {
                     VStack {
@@ -67,9 +81,66 @@ struct LiveMetricsView: View {
 
             HStack(spacing: 12) {
                 MetricCard(title: "Births", value: "\(statistics.births)", color: .green)
-                MetricCard(title: "Deaths", value: "\(statistics.deaths)", color: .red)
+                MetricCard(title: "Deaths", value: "\(statistics.totalDeaths)", color: .red)
+            }
+
+            // Death causes breakdown if there are deaths
+            if statistics.totalDeaths > 0 {
+                DeathCausesView(statistics: statistics)
             }
         }
+    }
+}
+
+struct DeathCausesView: View {
+    let statistics: GameStatistics
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Death Causes")
+                .font(.caption)
+                .fontWeight(.semibold)
+                .foregroundColor(.gray)
+
+            HStack(spacing: 8) {
+                if statistics.deathsByStarvation > 0 {
+                    DeathCauseChip(icon: "🍽️", count: statistics.deathsByStarvation, label: "Starve")
+                }
+                if statistics.deathsByOldAge > 0 {
+                    DeathCauseChip(icon: "👴", count: statistics.deathsByOldAge, label: "Age")
+                }
+                if statistics.deathsByLowEnergy > 0 {
+                    DeathCauseChip(icon: "⚡", count: statistics.deathsByLowEnergy, label: "Energy")
+                }
+                if statistics.deathsByHazard > 0 {
+                    DeathCauseChip(icon: "☠️", count: statistics.deathsByHazard, label: "Hazard")
+                }
+            }
+        }
+        .padding(.top, 4)
+    }
+}
+
+struct DeathCauseChip: View {
+    let icon: String
+    let count: Int
+    let label: String
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Text(icon)
+                .font(.caption2)
+            Text("\(count)")
+                .font(.caption2)
+                .fontWeight(.bold)
+            Text(label)
+                .font(.caption2)
+                .foregroundColor(.gray)
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 3)
+        .background(Color.black.opacity(0.4))
+        .cornerRadius(4)
     }
 }
 
@@ -266,6 +337,86 @@ struct OrganismListView: View {
     }
 }
 
+struct SpeciesPanelView: View {
+    let species: [SpeciesInfo]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Species (\(species.count))")
+                .font(.headline)
+                .fontWeight(.semibold)
+                .foregroundColor(.cyan)
+
+            if species.isEmpty {
+                Text("No species alive")
+                    .foregroundColor(.gray)
+                    .padding()
+            } else {
+                VStack(spacing: 6) {
+                    ForEach(species) { speciesData in
+                        SpeciesRow(species: speciesData)
+                    }
+                }
+            }
+        }
+        .padding(.horizontal)
+    }
+}
+
+struct SpeciesRow: View {
+    let species: SpeciesInfo
+
+    var body: some View {
+        HStack(spacing: 10) {
+            // Species color indicator
+            Circle()
+                .fill(Color(red: species.color.red, green: species.color.green, blue: species.color.blue))
+                .frame(width: 16, height: 16)
+                .overlay(
+                    Circle()
+                        .stroke(Color.white.opacity(0.5), lineWidth: 1)
+                )
+
+            // Species name
+            Text(species.name)
+                .font(.system(.caption, design: .rounded))
+                .fontWeight(.semibold)
+                .foregroundColor(.white)
+                .frame(width: 120, alignment: .leading)
+
+            Spacer()
+
+            // Population
+            Text("\(species.population)")
+                .font(.system(.caption, design: .monospaced))
+                .fontWeight(.bold)
+                .foregroundColor(.green)
+                .frame(width: 30, alignment: .trailing)
+
+            // Average speed
+            Text("Spd: \(Int(species.averageSpeed))")
+                .font(.caption2)
+                .foregroundColor(.orange)
+                .frame(width: 50, alignment: .leading)
+
+            // Age at founding
+            Text("Day \(species.foundedOnDay)")
+                .font(.caption2)
+                .foregroundColor(.gray)
+        }
+        .padding(.vertical, 6)
+        .padding(.horizontal, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(Color.black.opacity(0.3))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 6)
+                .stroke(Color(red: species.color.red, green: species.color.green, blue: species.color.blue).opacity(0.3), lineWidth: 1)
+        )
+    }
+}
+
 struct OrganismRow: View {
     let organism: OrganismInfo
 
@@ -292,6 +443,126 @@ struct OrganismRow: View {
             Text("Gen: \(organism.generation)")
                 .font(.caption)
                 .foregroundColor(.cyan)
+        }
+        .padding(.vertical, 4)
+        .padding(.horizontal, 8)
+        .background(Color.black.opacity(0.2))
+        .cornerRadius(4)
+    }
+}
+
+struct MilestonesView: View {
+    let milestones: EvolutionMilestones
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("🏆 Evolution Records")
+                .font(.headline)
+                .fontWeight(.semibold)
+                .foregroundColor(.yellow)
+
+            VStack(spacing: 4) {
+                if let speedRecord = milestones.fastestSpeed {
+                    MilestoneRow(
+                        icon: "⚡",
+                        title: "Fastest",
+                        value: String(format: "%.0f", speedRecord.value),
+                        detail: "Gen \(speedRecord.generation), Day \(speedRecord.achievedOnDay)",
+                        color: .yellow
+                    )
+                }
+
+                if let ageRecord = milestones.oldestAge {
+                    MilestoneRow(
+                        icon: "🕰️",
+                        title: "Oldest",
+                        value: "\(Int(ageRecord.value)) days",
+                        detail: "Gen \(ageRecord.generation), Day \(ageRecord.achievedOnDay)",
+                        color: .cyan
+                    )
+                }
+
+                if let sizeRecord = milestones.largestSize {
+                    MilestoneRow(
+                        icon: "📏",
+                        title: "Largest",
+                        value: String(format: "%.2f", sizeRecord.value),
+                        detail: "Gen \(sizeRecord.generation), Day \(sizeRecord.achievedOnDay)",
+                        color: .purple
+                    )
+                }
+
+                if let energyRecord = milestones.highestEnergy {
+                    MilestoneRow(
+                        icon: "⚡",
+                        title: "Energy",
+                        value: String(format: "%.1f", energyRecord.value),
+                        detail: "Gen \(energyRecord.generation), Day \(energyRecord.achievedOnDay)",
+                        color: .green
+                    )
+                }
+
+                if let genRecord = milestones.deepestGeneration {
+                    MilestoneRow(
+                        icon: "🧬",
+                        title: "Generation",
+                        value: "\(Int(genRecord.value))",
+                        detail: "Day \(genRecord.achievedOnDay)",
+                        color: .orange
+                    )
+                }
+
+                if let popRecord = milestones.largestPopulation {
+                    MilestoneRow(
+                        icon: "👥",
+                        title: "Population",
+                        value: "\(Int(popRecord.value))",
+                        detail: "Day \(popRecord.achievedOnDay)",
+                        color: .green
+                    )
+                }
+
+                if milestones.fastestSpeed == nil &&
+                   milestones.oldestAge == nil &&
+                   milestones.largestSize == nil {
+                    Text("No records yet - keep evolving!")
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                        .padding(.vertical, 8)
+                }
+            }
+        }
+        .padding(.horizontal)
+    }
+}
+
+struct MilestoneRow: View {
+    let icon: String
+    let title: String
+    let value: String
+    let detail: String
+    let color: Color
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(icon)
+                .font(.caption)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.caption2)
+                    .foregroundColor(.gray)
+                Text(value)
+                    .font(.caption)
+                    .fontWeight(.bold)
+                    .foregroundColor(color)
+            }
+
+            Spacer()
+
+            Text(detail)
+                .font(.caption2)
+                .foregroundColor(.gray)
         }
         .padding(.vertical, 4)
         .padding(.horizontal, 8)
