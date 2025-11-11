@@ -2056,7 +2056,7 @@ class GameScene: SKScene {
         label.alpha = 0
         label.setScale(0.3)
 
-        // Add population info
+        // Add population info with births/deaths
         let popLabel = SKLabelNode(text: "Population: \(statistics.population)")
         popLabel.fontName = "Helvetica"
         popLabel.fontSize = 20
@@ -2065,8 +2065,33 @@ class GameScene: SKScene {
         popLabel.zPosition = 1000
         popLabel.alpha = 0
 
+        // Add births/deaths summary
+        let statsLabel = SKLabelNode(text: "Births: \(statistics.births)  Deaths: \(statistics.totalDeaths)")
+        statsLabel.fontName = "Helvetica"
+        statsLabel.fontSize = 16
+        statsLabel.fontColor = statistics.births > statistics.totalDeaths ? .green : (statistics.totalDeaths > statistics.births ? .red : .gray)
+        statsLabel.position = CGPoint(x: size.width / 2, y: size.height / 2 - 75)
+        statsLabel.zPosition = 1000
+        statsLabel.alpha = 0
+
+        // Add background flash
+        let flash = SKShapeNode(rectOf: CGSize(width: size.width, height: size.height))
+        flash.fillColor = healthColor
+        flash.strokeColor = .clear
+        flash.alpha = 0
+        flash.zPosition = 999
+        flash.position = CGPoint(x: size.width / 2, y: size.height / 2)
+
+        addChild(flash)
         addChild(label)
         addChild(popLabel)
+        addChild(statsLabel)
+
+        // Flash animation
+        let flashIn = SKAction.fadeAlpha(to: 0.3, duration: 0.1)
+        let flashOut = SKAction.fadeOut(withDuration: 0.3)
+        let removeFlash = SKAction.removeFromParent()
+        flash.run(SKAction.sequence([flashIn, flashOut, removeFlash]))
 
         // Create dramatic entrance with multiple effects
         let fadeIn = SKAction.fadeIn(withDuration: 0.4)
@@ -2105,6 +2130,7 @@ class GameScene: SKScene {
 
         label.run(sequence)
         popLabel.run(sequence)
+        statsLabel.run(sequence)
 
         // Add expanding circle effect
         addDayTransitionRing(at: CGPoint(x: size.width / 2, y: size.height / 2))
