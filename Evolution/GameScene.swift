@@ -17,12 +17,17 @@ class GameScene: SKScene {
     private var organisms: [Organism] = []
     private var food: [Food] = []
     private var obstacles: [Obstacle] = []
+    private var temperatureZones: [TemperatureZone] = []
+    private var terrainPatches: [TerrainPatch] = []
+    private var species: [UUID: Species] = [:]  // Track all species by ID
     private var organismNodes: [UUID: SKShapeNode] = [:]
     private var senseRangeNodes: [UUID: SKShapeNode] = [:]  // Visual sense range indicators
     private var energyBarNodes: [UUID: (background: SKShapeNode, bar: SKShapeNode)] = [:]  // Energy bars
     private var trailNodes: [UUID: [SKShapeNode]] = [:]  // Movement trails
     private var foodNodes: [UUID: SKShapeNode] = [:]
     private var obstacleNodes: [UUID: SKShapeNode] = [:]
+    private var temperatureZoneNodes: [UUID: SKShapeNode] = [:]
+    private var terrainNodes: [UUID: SKShapeNode] = [:]
     private var corpsePositions: [CGPoint] = []  // Store positions of dead organisms
 
     // Selection
@@ -30,10 +35,15 @@ class GameScene: SKScene {
     private var selectionIndicator: SKShapeNode?
 
     private var currentDay: Int = 0
+    private var currentSeason: Season = .spring
+    private var currentWeather: WeatherEvent = WeatherEvent(type: .clear)
+    private var dayNightProgress: Double = 0.0  // 0.0 = midnight, 0.5 = noon, 1.0 = midnight
     var showSenseRanges: Bool = true  // Toggle for sense range visualization
     var showTrails: Bool = true  // Toggle for movement trails
     private let maxTrailLength: Int = 20  // Maximum trail segments per organism
     var showEliteHighlights: Bool = false  // Toggle for elite organism highlighting (disabled by default)
+    private var dayNightOverlay: SKShapeNode?  // Visual overlay for day/night
+    private var weatherOverlay: SKShapeNode?  // Visual overlay for weather effects
 
     // Obstacle placement mode
     var isPlacingObstacles: Bool = false
@@ -83,6 +93,10 @@ class GameScene: SKScene {
 
         setupInitialPopulation()
         spawnFood()
+        spawnTemperatureZones()
+        spawnTerrainPatches()
+        setupDayNightOverlay()
+        setupWeatherOverlay()
         updateStatistics()
         showLegend()
     }
@@ -232,6 +246,8 @@ class GameScene: SKScene {
 
             let randomX = CGFloat.random(in: minX...max(minX + 1, maxX))
             let randomY = CGFloat.random(in: minY...max(minY + 1, maxY))
+
+            // Create founder organism (each starts its own species)
             let organism = Organism(
                 speed: configuration.initialSpeed,
                 senseRange: configuration.initialSenseRange,
@@ -242,10 +258,15 @@ class GameScene: SKScene {
                 aggression: configuration.initialAggression,
                 defense: configuration.initialDefense,
                 metabolism: configuration.initialMetabolism,
+                heatTolerance: configuration.initialHeatTolerance,
+                coldTolerance: configuration.initialColdTolerance,
                 position: CGPoint(x: randomX, y: randomY),
                 generation: 0,
                 configuration: configuration
             )
+
+            // Create species for this organism
+            registerSpecies(for: organism, foundedOnDay: 0)
             addOrganism(organism)
         }
     }
@@ -270,8 +291,11 @@ class GameScene: SKScene {
         }
         corpsePositions.removeAll()  // Clear corpse positions after spawning
 
+        // Calculate seasonal food amount
+        let seasonalFoodCount = getSeasonalFoodCount()
+
         // Then spawn regular food items based on current pattern
-        let positions = generateFoodPositions(count: configuration.foodPerDay, pattern: currentFoodPattern)
+        let positions = generateFoodPositions(count: seasonalFoodCount, pattern: currentFoodPattern)
         for position in positions {
             let foodItem = Food(position: position)
             addFood(foodItem)
@@ -409,9 +433,497 @@ class GameScene: SKScene {
         label.run(SKAction.sequence([fadeIn, wait, fadeOut, remove]))
     }
 
+    // MARK: - Day/Night Cycle
+    private func setupDayNightOverlay() {
+        // Create overlay that covers entire scene
+        dayNightOverlay = SKShapeNode(rectOf: size)
+        guard let overlay = dayNightOverlay else { return }
+
+        overlay.position = CGPoint(x: size.width / 2, y: size.height / 2)
+        overlay.fillColor = .black
+        overlay.strokeColor = .clear
+        overlay.alpha = 0.0
+        overlay.zPosition = 100  // Above everything except UI
+        overlay.isUserInteractionEnabled = false
+
+        addChild(overlay)
+    }
+
+    private func updateDayNightCycle(deltaTime: Double) {
+        guard configuration.dayNightCycleEnabled else { return }
+
+        // Progress through day/night cycle
+        dayNightProgress += deltaTime / configuration.dayNightCycleDuration
+        dayNightProgress = dayNightProgress.truncatingRemainder(dividingBy: 1.0)
+
+        // Update visual overlay
+        updateDayNightVisuals()
+    }
+
+    private func updateDayNightVisuals() {
+        guard let overlay = dayNightOverlay else { return }
+
+        // Calculate darkness level based on time of day
+        // 0.0 (midnight) = darkest, 0.5 (noon) = brightest
+        let darknessLevel = getDarknessLevel()
+        overlay.alpha = darknessLevel * 0.5  // Max 50% opacity at midnight
+    }
+
+    private func getDarknessLevel() -> Double {
+        // Smooth transition using cosine
+        // dayNightProgress: 0.0 = midnight, 0.5 = noon, 1.0 = midnight
+        // Returns: 0.0 = full brightness (noon), 1.0 = full darkness (midnight)
+        let angle = dayNightProgress * 2.0 * .pi
+        let brightness = (cos(angle) + 1.0) / 2.0  // 0.0 at midnight, 1.0 at noon
+        return 1.0 - brightness
+    }
+
+    private func isNightTime() -> Bool {
+        let darknessLevel = getDarknessLevel()
+        return darknessLevel > 0.3  // Night if more than 30% dark
+    }
+
+    private func getEffectiveSenseRange(for organism: Organism) -> Int {
+        var multiplier = 1.0
+
+        // Apply night time modifier
+        if isNightTime() && configuration.dayNightCycleEnabled {
+            multiplier *= configuration.nightSenseRangeMultiplier
+        }
+
+        // Apply weather visibility modifier
+        multiplier *= getWeatherVisibilityModifier()
+
+        return Int(Double(organism.senseRange) * multiplier)
+    }
+
+    private func getDayNightEnergyMultiplier() -> Double {
+        if isNightTime() && configuration.dayNightCycleEnabled {
+            return configuration.nightEnergyMultiplier
+        }
+        return 1.0
+    }
+
+    // MARK: - Weather System
+    private func setupWeatherOverlay() {
+        // Create weather overlay that covers entire scene
+        weatherOverlay = SKShapeNode(rectOf: size)
+        guard let overlay = weatherOverlay else { return }
+
+        overlay.position = CGPoint(x: size.width / 2, y: size.height / 2)
+        overlay.fillColor = currentWeather.type.overlayColor
+        overlay.strokeColor = .clear
+        overlay.zPosition = 99  // Below day/night overlay but above everything else
+        overlay.isUserInteractionEnabled = false
+
+        addChild(overlay)
+    }
+
+    private func updateWeather() {
+        // Decrement current weather duration
+        currentWeather.decrementDay()
+
+        // Check if weather has expired
+        if currentWeather.isExpired {
+            // Generate new weather event
+            let weatherTypes = WeatherEventType.allCases
+            let newWeatherType = weatherTypes.randomElement() ?? .clear
+            currentWeather = WeatherEvent(type: newWeatherType)
+
+            // Show weather transition
+            showWeatherTransition()
+            updateWeatherVisuals()
+        }
+    }
+
+    private func updateWeatherVisuals() {
+        guard let overlay = weatherOverlay else { return }
+
+        // Animate overlay color change
+        let colorChange = SKAction.customAction(withDuration: 1.0) { [weak self] node, elapsed in
+            guard let self = self, let shape = node as? SKShapeNode else { return }
+            let progress = elapsed / 1.0
+            // Smoothly transition to new weather color
+            let oldAlpha = shape.alpha
+            let targetColor = self.currentWeather.type.overlayColor
+            shape.fillColor = targetColor
+            shape.alpha = oldAlpha * (1.0 - progress) + targetColor.components.alpha * progress
+        }
+
+        overlay.run(colorChange)
+    }
+
+    private func showWeatherTransition() {
+        let label = SKLabelNode(text: "\(currentWeather.type.emoji) \(currentWeather.type.rawValue)")
+        label.fontName = "Helvetica-Bold"
+        label.fontSize = 28
+        label.fontColor = .white
+        let centerX = (playableMinX + playableMaxX) / 2
+        let middleY = (playableMinY + playableMaxY) / 2
+        label.position = CGPoint(x: centerX, y: middleY)
+        label.zPosition = 1000
+        label.alpha = 0
+
+        addChild(label)
+
+        let fadeIn = SKAction.fadeIn(withDuration: 0.3)
+        let wait = SKAction.wait(forDuration: 1.5)
+        let fadeOut = SKAction.fadeOut(withDuration: 0.3)
+        let remove = SKAction.removeFromParent()
+
+        label.run(SKAction.sequence([fadeIn, wait, fadeOut, remove]))
+    }
+
+    private func getWeatherVisibilityModifier() -> Double {
+        return currentWeather.type.visibilityModifier
+    }
+
+    private func getWeatherMovementModifier() -> Double {
+        return currentWeather.type.movementModifier
+    }
+
+    private func getWeatherTemperatureModifier() -> Double {
+        return currentWeather.type.temperatureModifier
+    }
+
+    // MARK: - Seasonal System
+    private func updateSeason() {
+        guard configuration.seasonsEnabled else { return }
+
+        let newSeason = getSeason(for: currentDay)
+        if newSeason != currentSeason {
+            currentSeason = newSeason
+            showSeasonTransition()
+        }
+    }
+
+    private func getSeason(for day: Int) -> Season {
+        let dayInYear = day % (configuration.daysPerSeason * 4)
+        let seasonIndex = dayInYear / configuration.daysPerSeason
+        return Season.allCases[min(seasonIndex, 3)]
+    }
+
+    private func getSeasonalFoodCount() -> Int {
+        guard configuration.seasonsEnabled else {
+            return configuration.foodPerDay
+        }
+
+        let multiplier: Double
+        switch currentSeason {
+        case .spring: multiplier = configuration.springFoodMultiplier
+        case .summer: multiplier = configuration.summerFoodMultiplier
+        case .fall: multiplier = configuration.fallFoodMultiplier
+        case .winter: multiplier = configuration.winterFoodMultiplier
+        }
+
+        return max(1, Int(Double(configuration.foodPerDay) * multiplier))
+    }
+
+    private func getSeasonalTemperatureOffset() -> Double {
+        guard configuration.seasonsEnabled else { return 0.0 }
+
+        switch currentSeason {
+        case .spring: return 0.0
+        case .summer: return configuration.summerTemperatureOffset
+        case .fall: return 0.0
+        case .winter: return configuration.winterTemperatureOffset
+        }
+    }
+
+    private func showSeasonTransition() {
+        let label = SKLabelNode(text: "\(currentSeason.emoji) \(currentSeason.rawValue)")
+        label.fontName = "Helvetica-Bold"
+        label.fontSize = 36
+        label.fontColor = currentSeason.color
+        let centerX = (playableMinX + playableMaxX) / 2
+        let topY = playableMaxY > 0 ? playableMaxY - 80 : size.height - 100
+        label.position = CGPoint(x: centerX, y: topY)
+        label.zPosition = 1000
+        label.alpha = 0
+        label.setScale(0.5)
+
+        addChild(label)
+
+        // Dramatic entrance
+        let fadeIn = SKAction.fadeIn(withDuration: 0.5)
+        let scaleUp = SKAction.scale(to: 1.2, duration: 0.5)
+        scaleUp.timingMode = .easeOut
+        let scaleDown = SKAction.scale(to: 1.0, duration: 0.3)
+        let entrance = SKAction.group([fadeIn, SKAction.sequence([scaleUp, scaleDown])])
+
+        // Wait and exit
+        let wait = SKAction.wait(forDuration: 2.0)
+        let fadeOut = SKAction.fadeOut(withDuration: 0.5)
+        let scaleOut = SKAction.scale(to: 1.5, duration: 0.5)
+        let exit = SKAction.group([fadeOut, scaleOut])
+
+        let remove = SKAction.removeFromParent()
+        let sequence = SKAction.sequence([entrance, wait, exit, remove])
+
+        label.run(sequence)
+    }
+
+    // MARK: - Species Management
+    private func registerSpecies(for organism: Organism, foundedOnDay: Int) {
+        // Check if species already exists
+        if species[organism.speciesId] == nil {
+            // Create new species
+            let color = Species.generateColor(for: organism.speciesId)
+            let traits = "\(organism.speed)-\(organism.senseRange)-\(Int(organism.size * 10))"
+            let name = Species.generateName(generation: organism.generation, traits: traits)
+
+            let newSpecies = Species(
+                id: organism.speciesId,
+                founderId: organism.id,
+                name: name,
+                color: color,
+                foundedOnDay: foundedOnDay
+            )
+
+            species[organism.speciesId] = newSpecies
+        }
+
+        // Update population count
+        species[organism.speciesId]?.population += 1
+    }
+
+    private func updateSpeciesPopulations() {
+        // Reset all populations
+        for speciesId in species.keys {
+            species[speciesId]?.population = 0
+        }
+
+        // Count organisms in each species
+        for organism in organisms {
+            species[organism.speciesId]?.population += 1
+        }
+
+        // Mark extinct species
+        for (speciesId, speciesData) in species {
+            if speciesData.population == 0 && !speciesData.isExtinct {
+                species[speciesId]?.extinctOnDay = currentDay
+            }
+        }
+    }
+
+    private func detectSpeciation(parent: Organism, child: Organism) -> Bool {
+        guard configuration.speciationEnabled else { return false }
+
+        // Check if child has diverged enough to form new species
+        let distance = child.geneticDistance(to: parent)
+
+        // If genetic distance exceeds threshold, child founds a new species
+        if distance >= configuration.speciationThreshold {
+            // Assign new species ID to child (child becomes founder)
+            return true
+        }
+
+        return false
+    }
+
+    private func getSpeciesColor(for organism: Organism) -> SKColor {
+        return species[organism.speciesId]?.color ?? Species.generateColor(for: organism.speciesId)
+    }
+
+    // MARK: - Terrain Management
+    private func spawnTerrainPatches() {
+        // Clear old terrain
+        for node in terrainNodes.values {
+            node.removeFromParent()
+        }
+        terrainPatches.removeAll()
+        terrainNodes.removeAll()
+
+        // Use playable bounds
+        let minX = playableMinX > 0 ? playableMinX : 30
+        let maxX = playableMaxX > minX ? playableMaxX : size.width - 30
+        let minY = playableMinY > 0 ? playableMinY : 30
+        let maxY = playableMaxY > minY ? playableMaxY : size.height - 30
+
+        // Create 3-5 terrain patches of various types
+        let patchCount = Int.random(in: 3...5)
+
+        for _ in 0..<patchCount {
+            let randomX = CGFloat.random(in: minX...maxX)
+            let randomY = CGFloat.random(in: minY...maxY)
+            let width = CGFloat.random(in: 80...180)
+            let height = CGFloat.random(in: 80...180)
+
+            // Random terrain type (excluding grass which is default)
+            let nonGrassTypes: [TerrainType] = [.sand, .water, .mud, .rock]
+            let randomType = nonGrassTypes.randomElement() ?? .sand
+
+            let patch = TerrainPatch(
+                position: CGPoint(x: randomX, y: randomY),
+                size: CGSize(width: width, height: height),
+                type: randomType
+            )
+
+            addTerrainPatch(patch)
+        }
+    }
+
+    private func addTerrainPatch(_ patch: TerrainPatch) {
+        terrainPatches.append(patch)
+
+        // Create visual node for terrain patch
+        let node = SKShapeNode(rectOf: patch.size, cornerRadius: 10)
+        node.fillColor = patch.type.color
+        node.strokeColor = patch.type.strokeColor
+        node.lineWidth = 2
+        node.position = patch.position
+        node.zPosition = 0.3  // Below temperature zones but above background
+
+        terrainNodes[patch.id] = node
+        addChild(node)
+    }
+
+    private func getTerrainSpeedMultiplier(at position: CGPoint) -> Double {
+        // Check all terrain patches at this position
+        // If multiple patches overlap, use the most restrictive (lowest) multiplier
+        var lowestMultiplier = 1.0
+
+        for patch in terrainPatches {
+            let multiplier = patch.speedMultiplierAt(position: position)
+            if multiplier < lowestMultiplier {
+                lowestMultiplier = multiplier
+            }
+        }
+
+        return lowestMultiplier
+    }
+
+    // MARK: - Temperature Zone Management
+    private func spawnTemperatureZones() {
+        // Clear old zones
+        for node in temperatureZoneNodes.values {
+            node.removeFromParent()
+        }
+        temperatureZones.removeAll()
+        temperatureZoneNodes.removeAll()
+
+        // Use playable bounds
+        let minX = playableMinX > 0 ? playableMinX : 30
+        let maxX = playableMaxX > minX ? playableMaxX : size.width - 30
+        let minY = playableMinY > 0 ? playableMinY : 30
+        let maxY = playableMaxY > minY ? playableMaxY : size.height - 30
+
+        // Create 2-4 temperature zones
+        let zoneCount = Int.random(in: 2...4)
+
+        for _ in 0..<zoneCount {
+            let randomX = CGFloat.random(in: minX...maxX)
+            let randomY = CGFloat.random(in: minY...maxY)
+            let radius = CGFloat.random(in: 80...150)
+
+            // Random temperature (hot or cold)
+            let isHot = Bool.random()
+            let temperature: Double
+            if isHot {
+                temperature = Double.random(in: 10...20)  // Hot zone
+            } else {
+                temperature = Double.random(in: -20...(-10))  // Cold zone
+            }
+
+            let zone = TemperatureZone(
+                position: CGPoint(x: randomX, y: randomY),
+                radius: radius,
+                temperature: temperature,
+                intensity: Double.random(in: 0.6...1.0)
+            )
+
+            addTemperatureZone(zone)
+        }
+    }
+
+    private func addTemperatureZone(_ zone: TemperatureZone) {
+        temperatureZones.append(zone)
+
+        // Create visual node for temperature zone
+        let node = SKShapeNode(circleOfRadius: zone.radius)
+
+        // Color based on temperature
+        if zone.temperature > 0 {
+            // Hot zone - red/orange gradient
+            let intensity = CGFloat(min(1.0, abs(zone.temperature) / 20.0))
+            node.fillColor = SKColor(red: 1.0, green: 0.3 * (1.0 - intensity), blue: 0.0, alpha: 0.15)
+            node.strokeColor = SKColor(red: 1.0, green: 0.5, blue: 0.0, alpha: 0.3)
+        } else {
+            // Cold zone - blue/cyan gradient
+            let intensity = CGFloat(min(1.0, abs(zone.temperature) / 20.0))
+            node.fillColor = SKColor(red: 0.0, green: 0.3 * (1.0 - intensity), blue: 1.0, alpha: 0.15)
+            node.strokeColor = SKColor(red: 0.0, green: 0.5, blue: 1.0, alpha: 0.3)
+        }
+
+        node.lineWidth = 2
+        node.position = zone.position
+        node.zPosition = 0.5  // Below organisms but above background
+
+        // Add gentle pulsing animation
+        let scaleUp = SKAction.scale(to: 1.05, duration: 2.0)
+        let scaleDown = SKAction.scale(to: 0.95, duration: 2.0)
+        let pulse = SKAction.sequence([scaleUp, scaleDown])
+        let forever = SKAction.repeatForever(pulse)
+        node.run(forever, withKey: "temperaturePulse")
+
+        temperatureZoneNodes[zone.id] = node
+        addChild(node)
+    }
+
+    private func getTemperatureAt(position: CGPoint) -> Double {
+        // Start with base temperature + seasonal offset + weather modifier
+        var totalTemperature = configuration.baseTemperature
+            + getSeasonalTemperatureOffset()
+            + getWeatherTemperatureModifier()
+
+        // Add effects from all temperature zones
+        for zone in temperatureZones {
+            totalTemperature += zone.temperatureAt(position: position)
+        }
+
+        return totalTemperature
+    }
+
+    private func applyTemperatureEffects() {
+        let dayNightMultiplier = getDayNightEnergyMultiplier()
+
+        for organism in organisms {
+            let currentTemp = getTemperatureAt(position: organism.position)
+            let tempDifference = abs(currentTemp - configuration.baseTemperature)
+
+            // Check for extreme temperature death
+            if tempDifference > configuration.temperatureDeathThreshold {
+                // Instant death from extreme temperature
+                let isTooHot = currentTemp > configuration.baseTemperature
+                let tolerance = isTooHot ? organism.heatTolerance : organism.coldTolerance
+
+                // Tolerance reduces the effective temperature difference
+                let effectiveDifference = tempDifference * (1.0 - tolerance)
+
+                if effectiveDifference > configuration.temperatureDeathThreshold {
+                    // Mark for death
+                    organism.consumeEnergy(organism.energy)  // Drain all energy
+                }
+            } else if tempDifference > 0 {
+                // Apply energy cost based on temperature and day/night
+                let isTooHot = currentTemp > configuration.baseTemperature
+                let tolerance = isTooHot ? organism.heatTolerance : organism.coldTolerance
+
+                // Tolerance reduces energy cost
+                let effectiveDifference = tempDifference * (1.0 - tolerance * 0.8)
+                let energyCost = effectiveDifference * configuration.temperatureEnergyMultiplier * dayNightMultiplier
+
+                organism.consumeEnergy(energyCost)
+            }
+        }
+    }
+
     // MARK: - Update Loop
     override func update(_ currentTime: TimeInterval) {
         let deltaTime = (1.0 / 60.0) * timeScale  // Apply time scale
+
+        // Update day/night cycle
+        updateDayNightCycle(deltaTime: deltaTime)
 
         // Check if day should end
         if shouldEndDay() {
@@ -419,6 +931,8 @@ class GameScene: SKScene {
             endDay()
             currentDay += 1
             statistics.currentDay = currentDay
+            updateSeason()  // Check for season change
+            updateWeather()  // Check for weather change
             showDayTransition()
             spawnFood()
             resetOrganismsForNewDay()
@@ -427,6 +941,7 @@ class GameScene: SKScene {
             updateOrganisms(deltaTime: deltaTime)
             checkCollisions()
             checkHazardCollisions()
+            applyTemperatureEffects()
             updateEnergyBars()
         }
 
@@ -464,7 +979,10 @@ class GameScene: SKScene {
             // Move towards target food
             if let target = organism.targetFood, !organism.hasFoodToday {
                 let oldPosition = organism.position
-                let (var newPosition, energyCost) = organism.move(towards: target.position, deltaTime: deltaTime)
+                let terrainMultiplier = getTerrainSpeedMultiplier(at: organism.position)
+                let weatherMultiplier = getWeatherMovementModifier()
+                let combinedMultiplier = terrainMultiplier * weatherMultiplier
+                let (var newPosition, energyCost) = organism.move(towards: target.position, deltaTime: deltaTime, terrainMultiplier: combinedMultiplier)
 
                 // Clamp to playable bounds
                 newPosition.x = max(playableMinX, min(playableMaxX, newPosition.x))
@@ -505,9 +1023,25 @@ class GameScene: SKScene {
                     node.position = newPosition
                 }
 
-                // Update sense range indicator
+                // Update sense range indicator (position and size for day/night)
                 if let senseNode = senseRangeNodes[organism.id] {
                     senseNode.position = newPosition
+
+                    // Update sense range size based on time of day
+                    let effectiveSenseRange = getEffectiveSenseRange(for: organism)
+                    let targetRadius = CGFloat(effectiveSenseRange)
+                    if abs(senseNode.path?.boundingBox.width ?? 0 - targetRadius * 2) > 1.0 {
+                        // Recreate node with new radius (animated transition would be smoother but more complex)
+                        senseNode.removeFromParent()
+                        let newSenseNode = SKShapeNode(circleOfRadius: targetRadius)
+                        newSenseNode.strokeColor = SKColor(red: 0.5, green: 0.8, blue: 1.0, alpha: 0.35)
+                        newSenseNode.lineWidth = 1.5
+                        newSenseNode.fillColor = .clear
+                        newSenseNode.position = newPosition
+                        newSenseNode.zPosition = 1
+                        senseRangeNodes[organism.id] = newSenseNode
+                        addChild(newSenseNode)
+                    }
                 }
             }
         }
@@ -549,7 +1083,8 @@ class GameScene: SKScene {
     private func findNearestUnclaimedFood(for organism: Organism) -> Food? {
         var nearest: Food?
         var nearestDistance: CGFloat = .infinity
-        let maxSenseDistance = CGFloat(organism.senseRange)
+        let effectiveSenseRange = getEffectiveSenseRange(for: organism)
+        let maxSenseDistance = CGFloat(effectiveSenseRange)
 
         for foodItem in food where !foodItem.isClaimed {
             let dx = foodItem.position.x - organism.position.x
@@ -754,7 +1289,17 @@ class GameScene: SKScene {
                     y: max(playableMinY, min(playableMaxY, childPosition.y))
                 )
 
-                let child = organism.reproduce(at: clampedPosition)
+                var child = organism.reproduce(at: clampedPosition)
+
+                // Check for speciation - if child diverged enough, it founds a new species
+                if detectSpeciation(parent: organism, child: child) {
+                    // Child becomes founder of new species
+                    child.speciesId = child.id
+                    registerSpecies(for: child, foundedOnDay: currentDay)
+                } else {
+                    // Child inherits parent's species
+                    registerSpecies(for: child, foundedOnDay: currentDay)
+                }
 
                 // Show dramatic reproduction with buildup -> POP -> split
                 showDramaticReproduction(parent: organism, child: child, childPosition: clampedPosition)
@@ -817,7 +1362,8 @@ class GameScene: SKScene {
 
         // Create sense range indicator (circle showing detection range)
         if showSenseRanges {
-            let senseRangeNode = SKShapeNode(circleOfRadius: CGFloat(organism.senseRange))
+            let effectiveSenseRange = getEffectiveSenseRange(for: organism)
+            let senseRangeNode = SKShapeNode(circleOfRadius: CGFloat(effectiveSenseRange))
             senseRangeNode.strokeColor = SKColor(red: 0.5, green: 0.8, blue: 1.0, alpha: 0.35)
             senseRangeNode.lineWidth = 1.5
             senseRangeNode.fillColor = .clear
@@ -829,8 +1375,8 @@ class GameScene: SKScene {
 
         // Create organism visual node (size-based radius)
         let node = SKShapeNode(circleOfRadius: CGFloat(organism.effectiveRadius))
-        let color = organism.color
-        node.fillColor = SKColor(red: CGFloat(color.red), green: CGFloat(color.green), blue: CGFloat(color.blue), alpha: 1.0)
+        let speciesColor = getSpeciesColor(for: organism)
+        node.fillColor = speciesColor
         node.strokeColor = .clear
         node.position = organism.position
         node.zPosition = 10
@@ -1078,6 +1624,9 @@ class GameScene: SKScene {
         statistics.currentDay = currentDay
         statistics.population = organisms.count
 
+        // Update species populations and mark extinct species
+        updateSpeciesPopulations()
+
         if organisms.isEmpty {
             statistics.averageSpeed = 0.0
             statistics.minSpeed = 0
@@ -1155,6 +1704,8 @@ class GameScene: SKScene {
                 aggression: organism.aggression,
                 defense: organism.defense,
                 metabolism: organism.metabolism,
+                heatTolerance: organism.heatTolerance,
+                coldTolerance: organism.coldTolerance,
                 energy: organism.energy,
                 age: organism.age,
                 generation: organism.generation,
@@ -2044,6 +2595,38 @@ class GameScene: SKScene {
 }
 
 // MARK: - Supporting Types
+enum Season: String, CaseIterable {
+    case spring = "Spring"
+    case summer = "Summer"
+    case fall = "Fall"
+    case winter = "Winter"
+
+    var emoji: String {
+        switch self {
+        case .spring: return "🌸"
+        case .summer: return "☀️"
+        case .fall: return "🍂"
+        case .winter: return "❄️"
+        }
+    }
+
+    var color: SKColor {
+        switch self {
+        case .spring: return SKColor(red: 0.5, green: 1.0, blue: 0.5, alpha: 1.0)
+        case .summer: return SKColor(red: 1.0, green: 0.9, blue: 0.3, alpha: 1.0)
+        case .fall: return SKColor(red: 1.0, green: 0.6, blue: 0.2, alpha: 1.0)
+        case .winter: return SKColor(red: 0.7, green: 0.9, blue: 1.0, alpha: 1.0)
+        }
+    }
+
+    func next() -> Season {
+        let allSeasons = Season.allCases
+        guard let currentIndex = allSeasons.firstIndex(of: self) else { return .spring }
+        let nextIndex = (currentIndex + 1) % allSeasons.count
+        return allSeasons[nextIndex]
+    }
+}
+
 struct GameStatistics {
     var currentDay: Int = 0
     var population: Int = 0
@@ -2087,6 +2670,8 @@ struct OrganismInfo: Identifiable {
     let aggression: Double
     let defense: Double
     let metabolism: Double
+    let heatTolerance: Double
+    let coldTolerance: Double
     let energy: Double
     let age: Int
     let generation: Int

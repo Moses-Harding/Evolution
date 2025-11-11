@@ -19,6 +19,8 @@ class Organism: Identifiable, Equatable {
     var aggression: Double  // Ability to contest food (0.0-1.0)
     var defense: Double  // Resistance to aggression (0.0-1.0)
     var metabolism: Double  // Energy consumption rate (0.5-1.5, where 1.0 = normal)
+    var heatTolerance: Double  // Tolerance to high temperatures (0.0-1.0)
+    var coldTolerance: Double  // Tolerance to low temperatures (0.0-1.0)
 
     var position: CGPoint
     var energy: Double
@@ -26,9 +28,10 @@ class Organism: Identifiable, Equatable {
     var hasFoodToday: Bool
     var targetFood: Food?
     var generation: Int
+    var speciesId: UUID  // Identifies which species this organism belongs to
     let configuration: GameConfiguration
 
-    init(id: UUID = UUID(), speed: Int, senseRange: Int, size: Double, fertility: Double, energyEfficiency: Double, maxAge: Int, aggression: Double, defense: Double, metabolism: Double, position: CGPoint, energy: Double? = nil, age: Int = 0, generation: Int = 0, configuration: GameConfiguration = .default) {
+    init(id: UUID = UUID(), speed: Int, senseRange: Int, size: Double, fertility: Double, energyEfficiency: Double, maxAge: Int, aggression: Double, defense: Double, metabolism: Double, heatTolerance: Double, coldTolerance: Double, position: CGPoint, energy: Double? = nil, age: Int = 0, generation: Int = 0, speciesId: UUID? = nil, configuration: GameConfiguration = .default) {
         self.id = id
         self.configuration = configuration
         self.speed = max(configuration.minSpeed, min(configuration.maxSpeed, speed))
@@ -40,12 +43,96 @@ class Organism: Identifiable, Equatable {
         self.aggression = max(configuration.minAggression, min(configuration.maxAggression, aggression))
         self.defense = max(configuration.minDefense, min(configuration.maxDefense, defense))
         self.metabolism = max(configuration.minMetabolism, min(configuration.maxMetabolism, metabolism))
+        self.heatTolerance = max(configuration.minHeatTolerance, min(configuration.maxHeatTolerance, heatTolerance))
+        self.coldTolerance = max(configuration.minColdTolerance, min(configuration.maxColdTolerance, coldTolerance))
         self.position = position
         self.energy = energy ?? configuration.initialEnergy
         self.age = age
         self.hasFoodToday = false
         self.targetFood = nil
         self.generation = generation
+        self.speciesId = speciesId ?? id  // If no species ID provided, this is the founder of a new species
+    }
+
+    // Calculate genetic distance to another organism (0.0 = identical, 1.0 = maximum difference)
+    func geneticDistance(to other: Organism) -> Double {
+        // Normalize each trait difference to 0-1 range, then average
+        var totalDistance = 0.0
+        var traitCount = 0
+
+        // Speed distance
+        let speedRange = Double(configuration.maxSpeed - configuration.minSpeed)
+        if speedRange > 0 {
+            totalDistance += abs(Double(speed - other.speed)) / speedRange
+            traitCount += 1
+        }
+
+        // Sense range distance
+        let senseRange = Double(configuration.maxSenseRange - configuration.minSenseRange)
+        if senseRange > 0 {
+            totalDistance += abs(Double(self.senseRange - other.senseRange)) / senseRange
+            traitCount += 1
+        }
+
+        // Size distance
+        let sizeRange = configuration.maxSize - configuration.minSize
+        if sizeRange > 0 {
+            totalDistance += abs(size - other.size) / sizeRange
+            traitCount += 1
+        }
+
+        // Fertility distance
+        let fertilityRange = configuration.maxFertility - configuration.minFertility
+        if fertilityRange > 0 {
+            totalDistance += abs(fertility - other.fertility) / fertilityRange
+            traitCount += 1
+        }
+
+        // Energy efficiency distance
+        let efficiencyRange = configuration.maxEnergyEfficiency - configuration.minEnergyEfficiency
+        if efficiencyRange > 0 {
+            totalDistance += abs(energyEfficiency - other.energyEfficiency) / efficiencyRange
+            traitCount += 1
+        }
+
+        // Max age distance
+        let maxAgeRange = Double(configuration.maxMaxAge - configuration.minMaxAge)
+        if maxAgeRange > 0 {
+            totalDistance += abs(Double(maxAge - other.maxAge)) / maxAgeRange
+            traitCount += 1
+        }
+
+        // Aggression distance
+        totalDistance += abs(aggression - other.aggression)
+        traitCount += 1
+
+        // Defense distance
+        totalDistance += abs(defense - other.defense)
+        traitCount += 1
+
+        // Metabolism distance
+        let metabolismRange = configuration.maxMetabolism - configuration.minMetabolism
+        if metabolismRange > 0 {
+            totalDistance += abs(metabolism - other.metabolism) / metabolismRange
+            traitCount += 1
+        }
+
+        // Heat tolerance distance
+        totalDistance += abs(heatTolerance - other.heatTolerance)
+        traitCount += 1
+
+        // Cold tolerance distance
+        totalDistance += abs(coldTolerance - other.coldTolerance)
+        traitCount += 1
+
+        return traitCount > 0 ? totalDistance / Double(traitCount) : 0.0
+    }
+
+    // Check if this organism can reproduce with another (based on genetic distance)
+    func canReproduceWith(_ other: Organism) -> Bool {
+        let distance = geneticDistance(to: other)
+        // If genetic distance exceeds threshold, they are different species and cannot reproduce
+        return distance < configuration.speciationThreshold
     }
 
     // Reproduction with mutation
@@ -77,6 +164,12 @@ class Organism: Identifiable, Equatable {
         let metabolismMutation = Double.random(in: -configuration.metabolismMutationRange...configuration.metabolismMutationRange)
         let childMetabolism = max(configuration.minMetabolism, min(configuration.maxMetabolism, metabolism + metabolismMutation))
 
+        let heatToleranceMutation = Double.random(in: -configuration.heatToleranceMutationRange...configuration.heatToleranceMutationRange)
+        let childHeatTolerance = max(configuration.minHeatTolerance, min(configuration.maxHeatTolerance, heatTolerance + heatToleranceMutation))
+
+        let coldToleranceMutation = Double.random(in: -configuration.coldToleranceMutationRange...configuration.coldToleranceMutationRange)
+        let childColdTolerance = max(configuration.minColdTolerance, min(configuration.maxColdTolerance, coldTolerance + coldToleranceMutation))
+
         return Organism(
             speed: childSpeed,
             senseRange: childSenseRange,
@@ -87,10 +180,13 @@ class Organism: Identifiable, Equatable {
             aggression: childAggression,
             defense: childDefense,
             metabolism: childMetabolism,
+            heatTolerance: childHeatTolerance,
+            coldTolerance: childColdTolerance,
             position: newPosition,
             energy: configuration.initialEnergy * 0.8,  // Start with 80% energy
             age: 0,
             generation: generation + 1,
+            speciesId: speciesId,  // Inherit parent's species ID
             configuration: configuration
         )
     }
@@ -115,25 +211,56 @@ class Organism: Identifiable, Equatable {
         return configuration.baseOrganismRadius * size
     }
 
+    // Effective max age (fertility reduces lifespan through pleiotropy)
+    var effectiveMaxAge: Int {
+        guard configuration.pleiotropyEnabled else { return maxAge }
+
+        // Higher fertility = shorter lifespan (trade-off)
+        let fertilityPenalty = (fertility - 1.0) * configuration.fertilityLongevityTradeoff
+        let ageMultiplier = 1.0 - fertilityPenalty
+        return Int(Double(maxAge) * max(0.5, ageMultiplier))  // At least 50% of base lifespan
+    }
+
+    // Effective defense (aggression reduces defense through pleiotropy)
+    var effectiveDefense: Double {
+        guard configuration.pleiotropyEnabled else { return defense }
+
+        // Higher aggression = lower defense (trade-off)
+        let aggressionPenalty = aggression * configuration.aggressionDefenseTradeoff
+        return max(0.0, defense - aggressionPenalty)
+    }
+
     // Calculate movement for this frame
-    func move(towards target: CGPoint, deltaTime: TimeInterval) -> (newPosition: CGPoint, energyCost: Double) {
+    func move(towards target: CGPoint, deltaTime: TimeInterval, terrainMultiplier: Double = 1.0) -> (newPosition: CGPoint, energyCost: Double) {
         let dx = target.x - position.x
         let dy = target.y - position.y
         let distance = sqrt(dx * dx + dy * dy)
 
-        if distance < CGFloat(effectiveSpeed) * CGFloat(deltaTime) {
+        // Apply terrain modifier to effective speed
+        let modifiedSpeed = effectiveSpeed * terrainMultiplier
+
+        if distance < CGFloat(modifiedSpeed) * CGFloat(deltaTime) {
             // Calculate energy cost for actual distance moved
             let actualDistance = distance
             let energyCost = Double(actualDistance) * configuration.energyCostPerMove / energyEfficiency
             return (target, energyCost)  // Reached target
         }
 
-        let moveDistance = CGFloat(effectiveSpeed) * CGFloat(deltaTime)
+        let moveDistance = CGFloat(modifiedSpeed) * CGFloat(deltaTime)
         let moveX = (dx / distance) * moveDistance
         let moveY = (dy / distance) * moveDistance
 
         // Calculate energy cost based on distance moved and efficiency
-        let energyCost = Double(moveDistance) * configuration.energyCostPerMove / energyEfficiency
+        // Difficult terrain costs more energy (inverse of speed multiplier)
+        let terrainEnergyCost = 2.0 - terrainMultiplier  // 1.0 for normal, up to 2.0 for difficult
+
+        // Pleiotropy: Larger sense range costs more energy to maintain
+        var senseEnergyCost = 1.0
+        if configuration.pleiotropyEnabled {
+            senseEnergyCost = 1.0 + (Double(self.senseRange) * configuration.senseEnergyTradeoff)
+        }
+
+        let energyCost = Double(moveDistance) * configuration.energyCostPerMove * terrainEnergyCost * senseEnergyCost / energyEfficiency
 
         return (CGPoint(x: position.x + moveX, y: position.y + moveY), energyCost)
     }
@@ -152,7 +279,7 @@ class Organism: Identifiable, Equatable {
     }
 
     var isDead: Bool {
-        return isStarving || age >= maxAge
+        return isStarving || age >= effectiveMaxAge
     }
 
     func incrementAge() {
