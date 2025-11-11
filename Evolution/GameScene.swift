@@ -29,6 +29,7 @@ class GameScene: SKScene {
     private var temperatureZoneNodes: [UUID: SKShapeNode] = [:]
     private var terrainNodes: [UUID: SKShapeNode] = [:]
     private var corpsePositions: [CGPoint] = []  // Store positions of dead organisms
+    private let maxCorpsePositions: Int = 100  // Limit corpse tracking for performance
 
     // Selection
     private var selectedOrganismId: UUID?
@@ -46,7 +47,8 @@ class GameScene: SKScene {
     private var dayNightProgress: Double = 0.0  // 0.0 = midnight, 0.5 = noon, 1.0 = midnight
     var showSenseRanges: Bool = true  // Toggle for sense range visualization
     var showTrails: Bool = true  // Toggle for movement trails
-    private let maxTrailLength: Int = 20  // Maximum trail segments per organism
+    private let maxTrailLength: Int = 15  // Reduced for performance (was 20)
+    private var trailUpdateThreshold: CGFloat = 3.0  // Minimum distance between trail segments
     var showEliteHighlights: Bool = false  // Toggle for elite organism highlighting (disabled by default)
     private var dayNightOverlay: SKShapeNode?  // Visual overlay for day/night
     private var weatherOverlay: SKShapeNode?  // Visual overlay for weather effects
@@ -1147,7 +1149,7 @@ class GameScene: SKScene {
                     let dx = newPosition.x - oldPosition.x
                     let dy = newPosition.y - oldPosition.y
                     let distance = sqrt(dx * dx + dy * dy)
-                    if distance > 2.0 {  // Only add trail if moved at least 2 pixels
+                    if distance > trailUpdateThreshold {  // Use threshold to reduce trail nodes
                         addTrailSegment(for: organism, from: oldPosition, to: newPosition)
                     }
                 }
@@ -1220,20 +1222,32 @@ class GameScene: SKScene {
     }
 
     private func findNearestUnclaimedFood(for organism: Organism) -> Food? {
-        var nearest: Food?
-        var nearestDistance: CGFloat = .infinity
-        let effectiveSenseRange = getEffectiveSenseRange(for: organism)
-        let maxSenseDistance = CGFloat(effectiveSenseRange)
+        // Performance optimization: Early exit if very few food items
+        guard !food.isEmpty else { return nil }
 
+        var nearest: Food?
+        var nearestDistanceSquared: CGFloat = .infinity  // Use squared distance to avoid sqrt
+        let effectiveSenseRange = getEffectiveSenseRange(for: organism)
+        let maxSenseDistanceSquared = CGFloat(effectiveSenseRange * effectiveSenseRange)
+
+        let orgX = organism.position.x
+        let orgY = organism.position.y
+
+        // Optimized loop: Check unclaimed food within sense range
         for foodItem in food where !foodItem.isClaimed {
-            let dx = foodItem.position.x - organism.position.x
-            let dy = foodItem.position.y - organism.position.y
-            let distance = sqrt(dx * dx + dy * dy)
+            let dx = foodItem.position.x - orgX
+            let dy = foodItem.position.y - orgY
+            let distanceSquared = dx * dx + dy * dy
 
             // Only consider food within sense range
-            if distance <= maxSenseDistance && distance < nearestDistance {
-                nearestDistance = distance
+            if distanceSquared <= maxSenseDistanceSquared && distanceSquared < nearestDistanceSquared {
+                nearestDistanceSquared = distanceSquared
                 nearest = foodItem
+
+                // Early exit if food is very close (< 20 units)
+                if distanceSquared < 400 {  // 20^2 = 400
+                    break
+                }
             }
         }
 
@@ -1453,7 +1467,10 @@ class GameScene: SKScene {
         let survivors = organisms.filter { organism in
             if organism.isDead || !organism.hasFoodToday {
                 deaths += 1
-                corpsePositions.append(organism.position)  // Store corpse position
+                // Store corpse position (limit to prevent memory bloat)
+                if corpsePositions.count < maxCorpsePositions {
+                    corpsePositions.append(organism.position)
+                }
 
                 // Track death cause and use different animations
                 if organism.isStarving {
