@@ -2225,8 +2225,136 @@ class GameScene: SKScene {
         )
         statistics.dailySnapshots.append(snapshot)
 
+        // Update milestones
+        updateMilestones()
+
         // Publish update
         statisticsPublisher.send(statistics)
+    }
+
+    private func updateMilestones() {
+        // Check fastest speed
+        if let fastest = organisms.max(by: { $0.speed < $1.speed }) {
+            let speedValue = Double(fastest.speed)
+            if statistics.milestones.fastestSpeed == nil || speedValue > statistics.milestones.fastestSpeed!.value {
+                statistics.milestones.fastestSpeed = MilestoneRecord(
+                    value: speedValue,
+                    organismId: String(fastest.id.uuidString.prefix(8)),
+                    achievedOnDay: currentDay,
+                    generation: fastest.generation
+                )
+                showFloatingLabel(text: "🏆 NEW SPEED RECORD!", at: fastest.position, color: .yellow, fontSize: 18, offsetY: 40)
+            }
+        }
+
+        // Check oldest age
+        if let oldest = organisms.max(by: { $0.age < $1.age }) {
+            let ageValue = Double(oldest.age)
+            if statistics.milestones.oldestAge == nil || ageValue > statistics.milestones.oldestAge!.value {
+                statistics.milestones.oldestAge = MilestoneRecord(
+                    value: ageValue,
+                    organismId: String(oldest.id.uuidString.prefix(8)),
+                    achievedOnDay: currentDay,
+                    generation: oldest.generation
+                )
+                showFloatingLabel(text: "🏆 OLDEST ORGANISM!", at: oldest.position, color: .cyan, fontSize: 18, offsetY: 40)
+            }
+        }
+
+        // Check largest size
+        if let largest = organisms.max(by: { $0.size < $1.size }) {
+            if statistics.milestones.largestSize == nil || largest.size > statistics.milestones.largestSize!.value {
+                statistics.milestones.largestSize = MilestoneRecord(
+                    value: largest.size,
+                    organismId: String(largest.id.uuidString.prefix(8)),
+                    achievedOnDay: currentDay,
+                    generation: largest.generation
+                )
+                showFloatingLabel(text: "🏆 SIZE RECORD!", at: largest.position, color: .purple, fontSize: 18, offsetY: 40)
+            }
+        }
+
+        // Check highest energy
+        if let mostEnergized = organisms.max(by: { $0.energy < $1.energy }) {
+            if statistics.milestones.highestEnergy == nil || mostEnergized.energy > statistics.milestones.highestEnergy!.value {
+                statistics.milestones.highestEnergy = MilestoneRecord(
+                    value: mostEnergized.energy,
+                    organismId: String(mostEnergized.id.uuidString.prefix(8)),
+                    achievedOnDay: currentDay,
+                    generation: mostEnergized.generation
+                )
+                showFloatingLabel(text: "🏆 ENERGY RECORD!", at: mostEnergized.position, color: .green, fontSize: 18, offsetY: 40)
+            }
+        }
+
+        // Check deepest generation
+        if let deepestGen = organisms.max(by: { $0.generation < $1.generation }) {
+            let genValue = Double(deepestGen.generation)
+            if statistics.milestones.deepestGeneration == nil || genValue > statistics.milestones.deepestGeneration!.value {
+                statistics.milestones.deepestGeneration = MilestoneRecord(
+                    value: genValue,
+                    organismId: String(deepestGen.id.uuidString.prefix(8)),
+                    achievedOnDay: currentDay,
+                    generation: deepestGen.generation
+                )
+                showFloatingLabel(text: "🏆 GEN \(deepestGen.generation)!", at: deepestGen.position, color: .orange, fontSize: 18, offsetY: 40)
+            }
+        }
+
+        // Check largest population
+        let popValue = Double(organisms.count)
+        if statistics.milestones.largestPopulation == nil || popValue > statistics.milestones.largestPopulation!.value {
+            statistics.milestones.largestPopulation = MilestoneRecord(
+                value: popValue,
+                organismId: "population",
+                achievedOnDay: currentDay,
+                generation: 0
+            )
+            // Show center screen notification for population milestone
+            showFloatingLabel(
+                text: "🏆 POPULATION: \(organisms.count)!",
+                at: CGPoint(x: (playableMinX + playableMaxX) / 2, y: (playableMinY + playableMaxY) / 2),
+                color: .green,
+                fontSize: 24,
+                offsetY: 0
+            )
+        }
+
+        // Check most aggressive
+        if let mostAggressive = organisms.max(by: { $0.aggression < $1.aggression }) {
+            if statistics.milestones.mostAggressive == nil || mostAggressive.aggression > statistics.milestones.mostAggressive!.value {
+                statistics.milestones.mostAggressive = MilestoneRecord(
+                    value: mostAggressive.aggression,
+                    organismId: String(mostAggressive.id.uuidString.prefix(8)),
+                    achievedOnDay: currentDay,
+                    generation: mostAggressive.generation
+                )
+            }
+        }
+
+        // Check highest defense
+        if let bestDefender = organisms.max(by: { $0.defense < $1.defense }) {
+            if statistics.milestones.highestDefense == nil || bestDefender.defense > statistics.milestones.highestDefense!.value {
+                statistics.milestones.highestDefense = MilestoneRecord(
+                    value: bestDefender.defense,
+                    organismId: String(bestDefender.id.uuidString.prefix(8)),
+                    achievedOnDay: currentDay,
+                    generation: bestDefender.generation
+                )
+            }
+        }
+
+        // Check best efficiency
+        if let mostEfficient = organisms.max(by: { $0.energyEfficiency < $1.energyEfficiency }) {
+            if statistics.milestones.bestEfficiency == nil || mostEfficient.energyEfficiency > statistics.milestones.bestEfficiency!.value {
+                statistics.milestones.bestEfficiency = MilestoneRecord(
+                    value: mostEfficient.energyEfficiency,
+                    organismId: String(mostEfficient.id.uuidString.prefix(8)),
+                    achievedOnDay: currentDay,
+                    generation: mostEfficient.generation
+                )
+            }
+        }
     }
 
     private func updateEliteOrganisms() {
@@ -3571,6 +3699,7 @@ struct GameStatistics {
     var organisms: [OrganismInfo] = []
     var dailySnapshots: [DailySnapshot] = []
     var activeSpecies: [SpeciesInfo] = []  // Current living species
+    var milestones: EvolutionMilestones = EvolutionMilestones()
 }
 
 struct SpeciesInfo: Identifiable {
@@ -3601,4 +3730,23 @@ struct OrganismInfo: Identifiable {
     let age: Int
     let generation: Int
     let hasFoodToday: Bool
+}
+
+struct MilestoneRecord: Codable {
+    let value: Double
+    let organismId: String
+    let achievedOnDay: Int
+    let generation: Int
+}
+
+struct EvolutionMilestones: Codable {
+    var fastestSpeed: MilestoneRecord?
+    var oldestAge: MilestoneRecord?
+    var largestSize: MilestoneRecord?
+    var highestEnergy: MilestoneRecord?
+    var deepestGeneration: MilestoneRecord?
+    var largestPopulation: MilestoneRecord?
+    var mostAggressive: MilestoneRecord?
+    var highestDefense: MilestoneRecord?
+    var bestEfficiency: MilestoneRecord?
 }

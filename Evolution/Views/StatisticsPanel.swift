@@ -28,6 +28,12 @@ struct StatisticsPanel: View {
                         .background(Color.white.opacity(0.3))
                 }
 
+                // Milestones Panel
+                MilestonesView(milestones: viewModel.statistics.milestones)
+
+                Divider()
+                    .background(Color.white.opacity(0.3))
+
                 // Charts in tabs for better space usage
                 TabView {
                     VStack {
@@ -437,6 +443,126 @@ struct OrganismRow: View {
             Text("Gen: \(organism.generation)")
                 .font(.caption)
                 .foregroundColor(.cyan)
+        }
+        .padding(.vertical, 4)
+        .padding(.horizontal, 8)
+        .background(Color.black.opacity(0.2))
+        .cornerRadius(4)
+    }
+}
+
+struct MilestonesView: View {
+    let milestones: EvolutionMilestones
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("🏆 Evolution Records")
+                .font(.headline)
+                .fontWeight(.semibold)
+                .foregroundColor(.yellow)
+
+            VStack(spacing: 4) {
+                if let speedRecord = milestones.fastestSpeed {
+                    MilestoneRow(
+                        icon: "⚡",
+                        title: "Fastest",
+                        value: String(format: "%.0f", speedRecord.value),
+                        detail: "Gen \(speedRecord.generation), Day \(speedRecord.achievedOnDay)",
+                        color: .yellow
+                    )
+                }
+
+                if let ageRecord = milestones.oldestAge {
+                    MilestoneRow(
+                        icon: "🕰️",
+                        title: "Oldest",
+                        value: "\(Int(ageRecord.value)) days",
+                        detail: "Gen \(ageRecord.generation), Day \(ageRecord.achievedOnDay)",
+                        color: .cyan
+                    )
+                }
+
+                if let sizeRecord = milestones.largestSize {
+                    MilestoneRow(
+                        icon: "📏",
+                        title: "Largest",
+                        value: String(format: "%.2f", sizeRecord.value),
+                        detail: "Gen \(sizeRecord.generation), Day \(sizeRecord.achievedOnDay)",
+                        color: .purple
+                    )
+                }
+
+                if let energyRecord = milestones.highestEnergy {
+                    MilestoneRow(
+                        icon: "⚡",
+                        title: "Energy",
+                        value: String(format: "%.1f", energyRecord.value),
+                        detail: "Gen \(energyRecord.generation), Day \(energyRecord.achievedOnDay)",
+                        color: .green
+                    )
+                }
+
+                if let genRecord = milestones.deepestGeneration {
+                    MilestoneRow(
+                        icon: "🧬",
+                        title: "Generation",
+                        value: "\(Int(genRecord.value))",
+                        detail: "Day \(genRecord.achievedOnDay)",
+                        color: .orange
+                    )
+                }
+
+                if let popRecord = milestones.largestPopulation {
+                    MilestoneRow(
+                        icon: "👥",
+                        title: "Population",
+                        value: "\(Int(popRecord.value))",
+                        detail: "Day \(popRecord.achievedOnDay)",
+                        color: .green
+                    )
+                }
+
+                if milestones.fastestSpeed == nil &&
+                   milestones.oldestAge == nil &&
+                   milestones.largestSize == nil {
+                    Text("No records yet - keep evolving!")
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                        .padding(.vertical, 8)
+                }
+            }
+        }
+        .padding(.horizontal)
+    }
+}
+
+struct MilestoneRow: View {
+    let icon: String
+    let title: String
+    let value: String
+    let detail: String
+    let color: Color
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(icon)
+                .font(.caption)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.caption2)
+                    .foregroundColor(.gray)
+                Text(value)
+                    .font(.caption)
+                    .fontWeight(.bold)
+                    .foregroundColor(color)
+            }
+
+            Spacer()
+
+            Text(detail)
+                .font(.caption2)
+                .foregroundColor(.gray)
         }
         .padding(.vertical, 4)
         .padding(.horizontal, 8)
