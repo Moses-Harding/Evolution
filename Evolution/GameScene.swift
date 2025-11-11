@@ -79,6 +79,7 @@ class GameScene: SKScene {
     // MARK: - Statistics
     var statistics: GameStatistics = GameStatistics()
     var evolutionaryRecords: EvolutionaryRecords = EvolutionaryRecords()
+    var lineageTracker: LineageTracker = LineageTracker()
 
     // MARK: - Publishers
     let statisticsPublisher = PassthroughSubject<GameStatistics, Never>()
@@ -305,6 +306,10 @@ class GameScene: SKScene {
 
             // Create species for this organism
             registerSpecies(for: organism, foundedOnDay: 0)
+
+            // Register lineage (initial organisms found their own lineages)
+            lineageTracker.registerOrganism(organism, parentId: nil, currentDay: 0)
+
             addOrganism(organism)
         }
     }
@@ -1744,6 +1749,10 @@ class GameScene: SKScene {
                     // Child becomes founder of new species
                     child.speciesId = child.id
                     registerSpecies(for: child, foundedOnDay: currentDay)
+
+                    // Child founds new lineage (speciation = new lineage)
+                    lineageTracker.registerOrganism(child, parentId: nil, currentDay: currentDay)
+
                     // Show speciation event label
                     showFloatingLabel(text: "NEW SPECIES!", at: clampedPosition, color: .magenta, fontSize: 16, offsetY: 50)
 
@@ -1752,8 +1761,9 @@ class GameScene: SKScene {
                         showMilestoneNotification(milestone: milestone)
                     }
                 } else {
-                    // Child inherits parent's species
+                    // Child inherits parent's species and lineage
                     registerSpecies(for: child, foundedOnDay: currentDay)
+                    lineageTracker.registerOrganism(child, parentId: organism.id, currentDay: currentDay)
                 }
 
                 // Show dramatic reproduction with buildup -> POP -> split
@@ -1803,6 +1813,10 @@ class GameScene: SKScene {
                     addCorpseMarker(at: organism.position, color: organism.color)
                     removeOrganism(organism, animated: true)
                 }
+
+                // Record death in lineage tracker
+                lineageTracker.recordDeath(organismId: organism.id, currentDay: currentDay)
+
                 return false
             } else {
                 return true
@@ -1829,6 +1843,9 @@ class GameScene: SKScene {
         for milestone in newMilestones {
             showMilestoneNotification(milestone: milestone)
         }
+
+        // Update lineage dominance scores
+        lineageTracker.updateDominanceScores(totalPopulation: statistics.population, currentDay: currentDay)
 
         // Check for mass extinction event
         if deaths > 0 {
