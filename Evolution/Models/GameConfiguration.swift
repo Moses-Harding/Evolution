@@ -20,6 +20,8 @@ struct GameConfiguration {
     var initialAggression: Double = 0.5
     var initialDefense: Double = 0.5
     var initialMetabolism: Double = 1.0
+    var initialHeatTolerance: Double = 0.5
+    var initialColdTolerance: Double = 0.5
 
     // MARK: - Evolution Parameters
     var minSpeed: Int = 1
@@ -58,6 +60,14 @@ struct GameConfiguration {
     var maxMetabolism: Double = 1.5
     var metabolismMutationRange: Double = 0.1
 
+    var minHeatTolerance: Double = 0.0
+    var maxHeatTolerance: Double = 1.0
+    var heatToleranceMutationRange: Double = 0.1
+
+    var minColdTolerance: Double = 0.0
+    var maxColdTolerance: Double = 1.0
+    var coldToleranceMutationRange: Double = 0.1
+
     // MARK: - Food Settings
     var foodPerDay: Int = 5
     var foodSize: Double = 8.0
@@ -87,6 +97,14 @@ struct GameConfiguration {
     // MARK: - Combat System
     var foodContestRange: Double = 15.0  // Distance at which organisms can contest food
     var aggressionSuccessBase: Double = 0.5  // Base chance to win food contest
+
+    // MARK: - Temperature System
+    var minTemperature: Double = -10.0  // Degrees (arbitrary scale)
+    var maxTemperature: Double = 40.0
+    var baseTemperature: Double = 20.0  // Comfortable temperature
+    var extremeTemperatureThreshold: Double = 15.0  // Distance from base temp to be "extreme"
+    var temperatureEnergyMultiplier: Double = 0.02  // Energy cost multiplier per degree outside comfort zone
+    var temperatureDeathThreshold: Double = 25.0  // Distance from base temp that causes instant death
 
     // MARK: - Presets
     static let `default` = GameConfiguration()

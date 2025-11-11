@@ -17,12 +17,14 @@ class GameScene: SKScene {
     private var organisms: [Organism] = []
     private var food: [Food] = []
     private var obstacles: [Obstacle] = []
+    private var temperatureZones: [TemperatureZone] = []
     private var organismNodes: [UUID: SKShapeNode] = [:]
     private var senseRangeNodes: [UUID: SKShapeNode] = [:]  // Visual sense range indicators
     private var energyBarNodes: [UUID: (background: SKShapeNode, bar: SKShapeNode)] = [:]  // Energy bars
     private var trailNodes: [UUID: [SKShapeNode]] = [:]  // Movement trails
     private var foodNodes: [UUID: SKShapeNode] = [:]
     private var obstacleNodes: [UUID: SKShapeNode] = [:]
+    private var temperatureZoneNodes: [UUID: SKShapeNode] = [:]
     private var corpsePositions: [CGPoint] = []  // Store positions of dead organisms
 
     // Selection
@@ -83,6 +85,7 @@ class GameScene: SKScene {
 
         setupInitialPopulation()
         spawnFood()
+        spawnTemperatureZones()
         updateStatistics()
         showLegend()
     }
@@ -242,6 +245,8 @@ class GameScene: SKScene {
                 aggression: configuration.initialAggression,
                 defense: configuration.initialDefense,
                 metabolism: configuration.initialMetabolism,
+                heatTolerance: configuration.initialHeatTolerance,
+                coldTolerance: configuration.initialColdTolerance,
                 position: CGPoint(x: randomX, y: randomY),
                 generation: 0,
                 configuration: configuration
@@ -409,6 +414,127 @@ class GameScene: SKScene {
         label.run(SKAction.sequence([fadeIn, wait, fadeOut, remove]))
     }
 
+    // MARK: - Temperature Zone Management
+    private func spawnTemperatureZones() {
+        // Clear old zones
+        for node in temperatureZoneNodes.values {
+            node.removeFromParent()
+        }
+        temperatureZones.removeAll()
+        temperatureZoneNodes.removeAll()
+
+        // Use playable bounds
+        let minX = playableMinX > 0 ? playableMinX : 30
+        let maxX = playableMaxX > minX ? playableMaxX : size.width - 30
+        let minY = playableMinY > 0 ? playableMinY : 30
+        let maxY = playableMaxY > minY ? playableMaxY : size.height - 30
+
+        // Create 2-4 temperature zones
+        let zoneCount = Int.random(in: 2...4)
+
+        for _ in 0..<zoneCount {
+            let randomX = CGFloat.random(in: minX...maxX)
+            let randomY = CGFloat.random(in: minY...maxY)
+            let radius = CGFloat.random(in: 80...150)
+
+            // Random temperature (hot or cold)
+            let isHot = Bool.random()
+            let temperature: Double
+            if isHot {
+                temperature = Double.random(in: 10...20)  // Hot zone
+            } else {
+                temperature = Double.random(in: -20...(-10))  // Cold zone
+            }
+
+            let zone = TemperatureZone(
+                position: CGPoint(x: randomX, y: randomY),
+                radius: radius,
+                temperature: temperature,
+                intensity: Double.random(in: 0.6...1.0)
+            )
+
+            addTemperatureZone(zone)
+        }
+    }
+
+    private func addTemperatureZone(_ zone: TemperatureZone) {
+        temperatureZones.append(zone)
+
+        // Create visual node for temperature zone
+        let node = SKShapeNode(circleOfRadius: zone.radius)
+
+        // Color based on temperature
+        if zone.temperature > 0 {
+            // Hot zone - red/orange gradient
+            let intensity = CGFloat(min(1.0, abs(zone.temperature) / 20.0))
+            node.fillColor = SKColor(red: 1.0, green: 0.3 * (1.0 - intensity), blue: 0.0, alpha: 0.15)
+            node.strokeColor = SKColor(red: 1.0, green: 0.5, blue: 0.0, alpha: 0.3)
+        } else {
+            // Cold zone - blue/cyan gradient
+            let intensity = CGFloat(min(1.0, abs(zone.temperature) / 20.0))
+            node.fillColor = SKColor(red: 0.0, green: 0.3 * (1.0 - intensity), blue: 1.0, alpha: 0.15)
+            node.strokeColor = SKColor(red: 0.0, green: 0.5, blue: 1.0, alpha: 0.3)
+        }
+
+        node.lineWidth = 2
+        node.position = zone.position
+        node.zPosition = 0.5  // Below organisms but above background
+
+        // Add gentle pulsing animation
+        let scaleUp = SKAction.scale(to: 1.05, duration: 2.0)
+        let scaleDown = SKAction.scale(to: 0.95, duration: 2.0)
+        let pulse = SKAction.sequence([scaleUp, scaleDown])
+        let forever = SKAction.repeatForever(pulse)
+        node.run(forever, withKey: "temperaturePulse")
+
+        temperatureZoneNodes[zone.id] = node
+        addChild(node)
+    }
+
+    private func getTemperatureAt(position: CGPoint) -> Double {
+        // Start with base temperature
+        var totalTemperature = configuration.baseTemperature
+
+        // Add effects from all temperature zones
+        for zone in temperatureZones {
+            totalTemperature += zone.temperatureAt(position: position)
+        }
+
+        return totalTemperature
+    }
+
+    private func applyTemperatureEffects() {
+        for organism in organisms {
+            let currentTemp = getTemperatureAt(position: organism.position)
+            let tempDifference = abs(currentTemp - configuration.baseTemperature)
+
+            // Check for extreme temperature death
+            if tempDifference > configuration.temperatureDeathThreshold {
+                // Instant death from extreme temperature
+                let isTooHot = currentTemp > configuration.baseTemperature
+                let tolerance = isTooHot ? organism.heatTolerance : organism.coldTolerance
+
+                // Tolerance reduces the effective temperature difference
+                let effectiveDifference = tempDifference * (1.0 - tolerance)
+
+                if effectiveDifference > configuration.temperatureDeathThreshold {
+                    // Mark for death
+                    organism.consumeEnergy(organism.energy)  // Drain all energy
+                }
+            } else if tempDifference > 0 {
+                // Apply energy cost based on temperature
+                let isTooHot = currentTemp > configuration.baseTemperature
+                let tolerance = isTooHot ? organism.heatTolerance : organism.coldTolerance
+
+                // Tolerance reduces energy cost
+                let effectiveDifference = tempDifference * (1.0 - tolerance * 0.8)
+                let energyCost = effectiveDifference * configuration.temperatureEnergyMultiplier
+
+                organism.consumeEnergy(energyCost)
+            }
+        }
+    }
+
     // MARK: - Update Loop
     override func update(_ currentTime: TimeInterval) {
         let deltaTime = (1.0 / 60.0) * timeScale  // Apply time scale
@@ -427,6 +553,7 @@ class GameScene: SKScene {
             updateOrganisms(deltaTime: deltaTime)
             checkCollisions()
             checkHazardCollisions()
+            applyTemperatureEffects()
             updateEnergyBars()
         }
 
@@ -1155,6 +1282,8 @@ class GameScene: SKScene {
                 aggression: organism.aggression,
                 defense: organism.defense,
                 metabolism: organism.metabolism,
+                heatTolerance: organism.heatTolerance,
+                coldTolerance: organism.coldTolerance,
                 energy: organism.energy,
                 age: organism.age,
                 generation: organism.generation,
@@ -2087,6 +2216,8 @@ struct OrganismInfo: Identifiable {
     let aggression: Double
     let defense: Double
     let metabolism: Double
+    let heatTolerance: Double
+    let coldTolerance: Double
     let energy: Double
     let age: Int
     let generation: Int

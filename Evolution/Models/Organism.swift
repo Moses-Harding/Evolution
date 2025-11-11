@@ -19,6 +19,8 @@ class Organism: Identifiable, Equatable {
     var aggression: Double  // Ability to contest food (0.0-1.0)
     var defense: Double  // Resistance to aggression (0.0-1.0)
     var metabolism: Double  // Energy consumption rate (0.5-1.5, where 1.0 = normal)
+    var heatTolerance: Double  // Tolerance to high temperatures (0.0-1.0)
+    var coldTolerance: Double  // Tolerance to low temperatures (0.0-1.0)
 
     var position: CGPoint
     var energy: Double
@@ -28,7 +30,7 @@ class Organism: Identifiable, Equatable {
     var generation: Int
     let configuration: GameConfiguration
 
-    init(id: UUID = UUID(), speed: Int, senseRange: Int, size: Double, fertility: Double, energyEfficiency: Double, maxAge: Int, aggression: Double, defense: Double, metabolism: Double, position: CGPoint, energy: Double? = nil, age: Int = 0, generation: Int = 0, configuration: GameConfiguration = .default) {
+    init(id: UUID = UUID(), speed: Int, senseRange: Int, size: Double, fertility: Double, energyEfficiency: Double, maxAge: Int, aggression: Double, defense: Double, metabolism: Double, heatTolerance: Double, coldTolerance: Double, position: CGPoint, energy: Double? = nil, age: Int = 0, generation: Int = 0, configuration: GameConfiguration = .default) {
         self.id = id
         self.configuration = configuration
         self.speed = max(configuration.minSpeed, min(configuration.maxSpeed, speed))
@@ -40,6 +42,8 @@ class Organism: Identifiable, Equatable {
         self.aggression = max(configuration.minAggression, min(configuration.maxAggression, aggression))
         self.defense = max(configuration.minDefense, min(configuration.maxDefense, defense))
         self.metabolism = max(configuration.minMetabolism, min(configuration.maxMetabolism, metabolism))
+        self.heatTolerance = max(configuration.minHeatTolerance, min(configuration.maxHeatTolerance, heatTolerance))
+        self.coldTolerance = max(configuration.minColdTolerance, min(configuration.maxColdTolerance, coldTolerance))
         self.position = position
         self.energy = energy ?? configuration.initialEnergy
         self.age = age
@@ -77,6 +81,12 @@ class Organism: Identifiable, Equatable {
         let metabolismMutation = Double.random(in: -configuration.metabolismMutationRange...configuration.metabolismMutationRange)
         let childMetabolism = max(configuration.minMetabolism, min(configuration.maxMetabolism, metabolism + metabolismMutation))
 
+        let heatToleranceMutation = Double.random(in: -configuration.heatToleranceMutationRange...configuration.heatToleranceMutationRange)
+        let childHeatTolerance = max(configuration.minHeatTolerance, min(configuration.maxHeatTolerance, heatTolerance + heatToleranceMutation))
+
+        let coldToleranceMutation = Double.random(in: -configuration.coldToleranceMutationRange...configuration.coldToleranceMutationRange)
+        let childColdTolerance = max(configuration.minColdTolerance, min(configuration.maxColdTolerance, coldTolerance + coldToleranceMutation))
+
         return Organism(
             speed: childSpeed,
             senseRange: childSenseRange,
@@ -87,6 +97,8 @@ class Organism: Identifiable, Equatable {
             aggression: childAggression,
             defense: childDefense,
             metabolism: childMetabolism,
+            heatTolerance: childHeatTolerance,
+            coldTolerance: childColdTolerance,
             position: newPosition,
             energy: configuration.initialEnergy * 0.8,  // Start with 80% energy
             age: 0,

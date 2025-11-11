@@ -13,8 +13,43 @@ final class OrganismTests: XCTestCase {
 
     let defaultConfig = GameConfiguration.default
 
+    // Helper function to create organisms with default values
+    func createOrganism(
+        speed: Int = 10,
+        senseRange: Int = 150,
+        size: Double = 1.0,
+        fertility: Double = 1.0,
+        energyEfficiency: Double = 1.0,
+        maxAge: Int = 200,
+        aggression: Double = 0.5,
+        defense: Double = 0.5,
+        metabolism: Double = 1.0,
+        heatTolerance: Double = 0.5,
+        coldTolerance: Double = 0.5,
+        position: CGPoint = .zero,
+        generation: Int = 0,
+        configuration: GameConfiguration? = nil
+    ) -> Organism {
+        return Organism(
+            speed: speed,
+            senseRange: senseRange,
+            size: size,
+            fertility: fertility,
+            energyEfficiency: energyEfficiency,
+            maxAge: maxAge,
+            aggression: aggression,
+            defense: defense,
+            metabolism: metabolism,
+            heatTolerance: heatTolerance,
+            coldTolerance: coldTolerance,
+            position: position,
+            generation: generation,
+            configuration: configuration ?? defaultConfig
+        )
+    }
+
     func testOrganismInitialization() {
-        let organism = Organism(speed: 15, senseRange: 150, size: 1.0, fertility: 1.0, position: CGPoint(x: 100, y: 100), generation: 0, configuration: defaultConfig)
+        let organism = createOrganism(speed: 15, senseRange: 150, size: 1.0, fertility: 1.0, position: CGPoint(x: 100, y: 100), generation: 0)
 
         XCTAssertEqual(organism.speed, 15)
         XCTAssertEqual(organism.senseRange, 150)
@@ -28,31 +63,31 @@ final class OrganismTests: XCTestCase {
     }
 
     func testSpeedClamping() {
-        let tooSlow = Organism(speed: -5, senseRange: 150, size: 1.0, fertility: 1.0, position: .zero, generation: 0, configuration: defaultConfig)
+        let tooSlow = createOrganism(speed: -5)
         XCTAssertEqual(tooSlow.speed, defaultConfig.minSpeed, "Speed should be clamped to minimum")
 
-        let tooFast = Organism(speed: 100, senseRange: 150, size: 1.0, fertility: 1.0, position: .zero, generation: 0, configuration: defaultConfig)
+        let tooFast = createOrganism(speed: 100)
         XCTAssertEqual(tooFast.speed, defaultConfig.maxSpeed, "Speed should be clamped to maximum")
     }
 
     func testSenseRangeClamping() {
-        let tooShort = Organism(speed: 10, senseRange: -50, size: 1.0, fertility: 1.0, position: .zero, generation: 0, configuration: defaultConfig)
+        let tooShort = createOrganism(senseRange: -50)
         XCTAssertEqual(tooShort.senseRange, defaultConfig.minSenseRange, "Sense range should be clamped to minimum")
 
-        let tooLong = Organism(speed: 10, senseRange: 1000, size: 1.0, fertility: 1.0, position: .zero, generation: 0, configuration: defaultConfig)
+        let tooLong = createOrganism(senseRange: 1000)
         XCTAssertEqual(tooLong.senseRange, defaultConfig.maxSenseRange, "Sense range should be clamped to maximum")
     }
 
     func testSizeClamping() {
-        let tooSmall = Organism(speed: 10, senseRange: 150, size: -1.0, fertility: 1.0, position: .zero, generation: 0, configuration: defaultConfig)
+        let tooSmall = createOrganism(size: -1.0)
         XCTAssertEqual(tooSmall.size, defaultConfig.minSize, accuracy: 0.01, "Size should be clamped to minimum")
 
-        let tooLarge = Organism(speed: 10, senseRange: 150, size: 10.0, fertility: 1.0, position: .zero, generation: 0, configuration: defaultConfig)
+        let tooLarge = createOrganism(size: 10.0)
         XCTAssertEqual(tooLarge.size, defaultConfig.maxSize, accuracy: 0.01, "Size should be clamped to maximum")
     }
 
     func testReproduction() {
-        let parent = Organism(speed: 10, senseRange: 150, size: 1.0, fertility: 1.0, position: CGPoint(x: 100, y: 100), generation: 5, configuration: defaultConfig)
+        let parent = createOrganism(speed: 10, position: CGPoint(x: 100, y: 100), generation: 5)
         let childPosition = CGPoint(x: 130, y: 100)
         let child = parent.reproduce(at: childPosition)
 
@@ -70,14 +105,14 @@ final class OrganismTests: XCTestCase {
 
     func testReproductionMaintainsSpeedBounds() {
         // Test edge case: very slow parent
-        let slowParent = Organism(speed: defaultConfig.minSpeed, senseRange: 150, size: 1.0, fertility: 1.0, position: .zero, generation: 0, configuration: defaultConfig)
+        let slowParent = createOrganism(speed: defaultConfig.minSpeed)
         for _ in 0..<20 {
             let child = slowParent.reproduce(at: .zero)
             XCTAssertTrue(child.speed >= defaultConfig.minSpeed && child.speed <= defaultConfig.maxSpeed, "Child speed must stay in bounds")
         }
 
         // Test edge case: very fast parent
-        let fastParent = Organism(speed: defaultConfig.maxSpeed, senseRange: 150, size: 1.0, fertility: 1.0, position: .zero, generation: 0, configuration: defaultConfig)
+        let fastParent = createOrganism(speed: defaultConfig.maxSpeed)
         for _ in 0..<20 {
             let child = fastParent.reproduce(at: .zero)
             XCTAssertTrue(child.speed >= defaultConfig.minSpeed && child.speed <= defaultConfig.maxSpeed, "Child speed must stay in bounds")
@@ -86,14 +121,14 @@ final class OrganismTests: XCTestCase {
 
     func testReproductionMaintainsSenseRangeBounds() {
         // Test edge case: very short sense range parent
-        let shortSenseParent = Organism(speed: 10, senseRange: defaultConfig.minSenseRange, size: 1.0, fertility: 1.0, position: .zero, generation: 0, configuration: defaultConfig)
+        let shortSenseParent = createOrganism(senseRange: defaultConfig.minSenseRange)
         for _ in 0..<20 {
             let child = shortSenseParent.reproduce(at: .zero)
             XCTAssertTrue(child.senseRange >= defaultConfig.minSenseRange && child.senseRange <= defaultConfig.maxSenseRange, "Child sense range must stay in bounds")
         }
 
         // Test edge case: very long sense range parent
-        let longSenseParent = Organism(speed: 10, senseRange: defaultConfig.maxSenseRange, size: 1.0, fertility: 1.0, position: .zero, generation: 0, configuration: defaultConfig)
+        let longSenseParent = createOrganism(senseRange: defaultConfig.maxSenseRange)
         for _ in 0..<20 {
             let child = longSenseParent.reproduce(at: .zero)
             XCTAssertTrue(child.senseRange >= defaultConfig.minSenseRange && child.senseRange <= defaultConfig.maxSenseRange, "Child sense range must stay in bounds")
@@ -102,14 +137,14 @@ final class OrganismTests: XCTestCase {
 
     func testReproductionMaintainsSizeBounds() {
         // Test edge case: very small parent
-        let smallParent = Organism(speed: 10, senseRange: 150, size: defaultConfig.minSize, fertility: 1.0, position: .zero, generation: 0, configuration: defaultConfig)
+        let smallParent = createOrganism(size: defaultConfig.minSize)
         for _ in 0..<20 {
             let child = smallParent.reproduce(at: .zero)
             XCTAssertTrue(child.size >= defaultConfig.minSize && child.size <= defaultConfig.maxSize, "Child size must stay in bounds")
         }
 
         // Test edge case: very large parent
-        let largeParent = Organism(speed: 10, senseRange: 150, size: defaultConfig.maxSize, fertility: 1.0, position: .zero, generation: 0, configuration: defaultConfig)
+        let largeParent = createOrganism(size: defaultConfig.maxSize)
         for _ in 0..<20 {
             let child = largeParent.reproduce(at: .zero)
             XCTAssertTrue(child.size >= defaultConfig.minSize && child.size <= defaultConfig.maxSize, "Child size must stay in bounds")
@@ -117,11 +152,11 @@ final class OrganismTests: XCTestCase {
     }
 
     func testMovement() {
-        let organism = Organism(speed: 10, senseRange: 150, size: 1.0, fertility: 1.0, position: CGPoint(x: 0, y: 0), generation: 0, configuration: defaultConfig)
+        let organism = createOrganism(speed: 10, position: CGPoint(x: 0, y: 0))
         let target = CGPoint(x: 100, y: 0)
 
         // Move for 1 second - using effectiveSpeed (size 1.0 with penalty 0.5 gives ~7.5 effective speed)
-        let newPosition = organism.move(towards: target, deltaTime: 1.0)
+        let (newPosition, _) = organism.move(towards: target, deltaTime: 1.0)
 
         // Should move toward target based on effective speed
         XCTAssertGreaterThan(newPosition.x, 0)
@@ -129,34 +164,34 @@ final class OrganismTests: XCTestCase {
     }
 
     func testMovementReachesTarget() {
-        let organism = Organism(speed: 10, senseRange: 150, size: 1.0, fertility: 1.0, position: CGPoint(x: 0, y: 0), generation: 0, configuration: defaultConfig)
+        let organism = createOrganism(speed: 10, position: CGPoint(x: 0, y: 0))
         let target = CGPoint(x: 5, y: 0)
 
         // Move for 1 second - should reach target
-        let newPosition = organism.move(towards: target, deltaTime: 1.0)
+        let (newPosition, _) = organism.move(towards: target, deltaTime: 1.0)
 
         XCTAssertEqual(newPosition, target, "Should reach target when close enough")
     }
 
     func testSizeAffectsSpeed() {
-        let smallOrganism = Organism(speed: 10, senseRange: 150, size: 0.5, fertility: 1.0, position: .zero, generation: 0, configuration: defaultConfig)
-        let largeOrganism = Organism(speed: 10, senseRange: 150, size: 2.0, fertility: 1.0, position: .zero, generation: 0, configuration: defaultConfig)
+        let smallOrganism = createOrganism(speed: 10, size: 0.5)
+        let largeOrganism = createOrganism(speed: 10, size: 2.0)
 
         // Smaller organisms should be faster
         XCTAssertGreaterThan(smallOrganism.effectiveSpeed, largeOrganism.effectiveSpeed, "Smaller organisms should have higher effective speed")
     }
 
     func testSizeAffectsRadius() {
-        let smallOrganism = Organism(speed: 10, senseRange: 150, size: 0.5, fertility: 1.0, position: .zero, generation: 0, configuration: defaultConfig)
-        let largeOrganism = Organism(speed: 10, senseRange: 150, size: 2.0, fertility: 1.0, position: .zero, generation: 0, configuration: defaultConfig)
+        let smallOrganism = createOrganism(size: 0.5)
+        let largeOrganism = createOrganism(size: 2.0)
 
         // Larger organisms should have bigger collision radius
         XCTAssertLessThan(smallOrganism.effectiveRadius, largeOrganism.effectiveRadius, "Larger organisms should have bigger collision radius")
     }
 
     func testColorGradient() {
-        let slowOrganism = Organism(speed: defaultConfig.minSpeed, senseRange: 150, size: 1.0, fertility: 1.0, position: .zero, generation: 0, configuration: defaultConfig)
-        let fastOrganism = Organism(speed: defaultConfig.maxSpeed, senseRange: 150, size: 1.0, fertility: 1.0, position: .zero, generation: 0, configuration: defaultConfig)
+        let slowOrganism = createOrganism(speed: defaultConfig.minSpeed)
+        let fastOrganism = createOrganism(speed: defaultConfig.maxSpeed)
 
         // Slow should be more blue
         XCTAssertTrue(slowOrganism.color.blue > slowOrganism.color.red)
@@ -166,23 +201,23 @@ final class OrganismTests: XCTestCase {
     }
 
     func testFertilityClamping() {
-        let tooLow = Organism(speed: 10, senseRange: 150, size: 1.0, fertility: -1.0, position: .zero, generation: 0, configuration: defaultConfig)
+        let tooLow = createOrganism(fertility: -1.0)
         XCTAssertEqual(tooLow.fertility, defaultConfig.minFertility, accuracy: 0.01, "Fertility should be clamped to minimum")
 
-        let tooHigh = Organism(speed: 10, senseRange: 150, size: 1.0, fertility: 5.0, position: .zero, generation: 0, configuration: defaultConfig)
+        let tooHigh = createOrganism(fertility: 5.0)
         XCTAssertEqual(tooHigh.fertility, defaultConfig.maxFertility, accuracy: 0.01, "Fertility should be clamped to maximum")
     }
 
     func testReproductionMaintainsFertilityBounds() {
         // Test edge case: very low fertility parent
-        let lowFertilityParent = Organism(speed: 10, senseRange: 150, size: 1.0, fertility: defaultConfig.minFertility, position: .zero, generation: 0, configuration: defaultConfig)
+        let lowFertilityParent = createOrganism(fertility: defaultConfig.minFertility)
         for _ in 0..<20 {
             let child = lowFertilityParent.reproduce(at: .zero)
             XCTAssertTrue(child.fertility >= defaultConfig.minFertility && child.fertility <= defaultConfig.maxFertility, "Child fertility must stay in bounds")
         }
 
         // Test edge case: very high fertility parent
-        let highFertilityParent = Organism(speed: 10, senseRange: 150, size: 1.0, fertility: defaultConfig.maxFertility, position: .zero, generation: 0, configuration: defaultConfig)
+        let highFertilityParent = createOrganism(fertility: defaultConfig.maxFertility)
         for _ in 0..<20 {
             let child = highFertilityParent.reproduce(at: .zero)
             XCTAssertTrue(child.fertility >= defaultConfig.minFertility && child.fertility <= defaultConfig.maxFertility, "Child fertility must stay in bounds")
@@ -190,9 +225,9 @@ final class OrganismTests: XCTestCase {
     }
 
     func testEffectiveReproductionProbability() {
-        let lowFertility = Organism(speed: 10, senseRange: 150, size: 1.0, fertility: 0.5, position: .zero, generation: 0, configuration: defaultConfig)
-        let normalFertility = Organism(speed: 10, senseRange: 150, size: 1.0, fertility: 1.0, position: .zero, generation: 0, configuration: defaultConfig)
-        let highFertility = Organism(speed: 10, senseRange: 150, size: 1.0, fertility: 1.5, position: .zero, generation: 0, configuration: defaultConfig)
+        let lowFertility = createOrganism(fertility: 0.5)
+        let normalFertility = createOrganism(fertility: 1.0)
+        let highFertility = createOrganism(fertility: 1.5)
 
         // Lower fertility should result in lower reproduction probability
         XCTAssertLessThan(lowFertility.effectiveReproductionProbability, normalFertility.effectiveReproductionProbability)
@@ -204,9 +239,51 @@ final class OrganismTests: XCTestCase {
         XCTAssertLessThanOrEqual(highFertility.effectiveReproductionProbability, 0.95)
     }
 
+    func testTemperatureToleranceClamping() {
+        let tooLowHeat = createOrganism(heatTolerance: -1.0)
+        XCTAssertEqual(tooLowHeat.heatTolerance, defaultConfig.minHeatTolerance, accuracy: 0.01, "Heat tolerance should be clamped to minimum")
+
+        let tooHighHeat = createOrganism(heatTolerance: 5.0)
+        XCTAssertEqual(tooHighHeat.heatTolerance, defaultConfig.maxHeatTolerance, accuracy: 0.01, "Heat tolerance should be clamped to maximum")
+
+        let tooLowCold = createOrganism(coldTolerance: -1.0)
+        XCTAssertEqual(tooLowCold.coldTolerance, defaultConfig.minColdTolerance, accuracy: 0.01, "Cold tolerance should be clamped to minimum")
+
+        let tooHighCold = createOrganism(coldTolerance: 5.0)
+        XCTAssertEqual(tooHighCold.coldTolerance, defaultConfig.maxColdTolerance, accuracy: 0.01, "Cold tolerance should be clamped to maximum")
+    }
+
+    func testReproductionMaintainsTemperatureToleranceBounds() {
+        // Test edge case: heat tolerance
+        let lowHeatParent = createOrganism(heatTolerance: defaultConfig.minHeatTolerance)
+        for _ in 0..<20 {
+            let child = lowHeatParent.reproduce(at: .zero)
+            XCTAssertTrue(child.heatTolerance >= defaultConfig.minHeatTolerance && child.heatTolerance <= defaultConfig.maxHeatTolerance, "Child heat tolerance must stay in bounds")
+        }
+
+        let highHeatParent = createOrganism(heatTolerance: defaultConfig.maxHeatTolerance)
+        for _ in 0..<20 {
+            let child = highHeatParent.reproduce(at: .zero)
+            XCTAssertTrue(child.heatTolerance >= defaultConfig.minHeatTolerance && child.heatTolerance <= defaultConfig.maxHeatTolerance, "Child heat tolerance must stay in bounds")
+        }
+
+        // Test edge case: cold tolerance
+        let lowColdParent = createOrganism(coldTolerance: defaultConfig.minColdTolerance)
+        for _ in 0..<20 {
+            let child = lowColdParent.reproduce(at: .zero)
+            XCTAssertTrue(child.coldTolerance >= defaultConfig.minColdTolerance && child.coldTolerance <= defaultConfig.maxColdTolerance, "Child cold tolerance must stay in bounds")
+        }
+
+        let highColdParent = createOrganism(coldTolerance: defaultConfig.maxColdTolerance)
+        for _ in 0..<20 {
+            let child = highColdParent.reproduce(at: .zero)
+            XCTAssertTrue(child.coldTolerance >= defaultConfig.minColdTolerance && child.coldTolerance <= defaultConfig.maxColdTolerance, "Child cold tolerance must stay in bounds")
+        }
+    }
+
     func testEquality() {
-        let organism1 = Organism(speed: 10, senseRange: 150, size: 1.0, fertility: 1.0, position: .zero, generation: 0, configuration: defaultConfig)
-        let organism2 = Organism(speed: 15, senseRange: 200, size: 1.5, fertility: 1.2, position: CGPoint(x: 100, y: 100), generation: 5, configuration: defaultConfig)
+        let organism1 = createOrganism(speed: 10)
+        let organism2 = createOrganism(speed: 15, senseRange: 200, size: 1.5, fertility: 1.2, position: CGPoint(x: 100, y: 100), generation: 5)
 
         XCTAssertEqual(organism1, organism1)
         XCTAssertNotEqual(organism1, organism2)
