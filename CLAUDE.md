@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Important: Read Development Guide First
+
+**At the start of each session, read `Development Guide.md`** to understand the project's autonomous development philosophy. When the user says "keep developing" or similar, consult that guide for how to proceed.
+
 ## Project Overview
 
 Evolution is an iOS simulation game demonstrating natural selection principles. Organisms compete for limited food resources, and successful ones reproduce with mutations, leading to evolutionary changes over time. Built with Swift, SpriteKit for 2D simulation, and SwiftUI for the statistics UI.
