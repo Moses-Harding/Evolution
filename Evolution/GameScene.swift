@@ -1498,6 +1498,9 @@ class GameScene: SKScene {
                 // Show floating birth label
                 showFloatingLabel(text: "BIRTH!", at: clampedPosition, color: .cyan, fontSize: 16, offsetY: 40)
 
+                // Show mutation severity indicator
+                showMutationIndicator(parent: organism, child: child, at: clampedPosition)
+
                 births += 1
             }
         }
@@ -2538,6 +2541,53 @@ class GameScene: SKScene {
         let fadeOut = SKAction.fadeOut(withDuration: 2.0)
         let remove = SKAction.removeFromParent()
         marker.run(SKAction.sequence([wait, fadeOut, remove]))
+    }
+
+    // MARK: - Mutation Indicators
+    private func showMutationIndicator(parent: Organism, child: Organism, at position: CGPoint) {
+        // Calculate mutation severity based on trait differences
+        let speedDiff = abs(Double(child.speed - parent.speed))
+        let sizeDiff = abs(child.size - parent.size)
+        let senseRangeDiff = abs(Double(child.senseRange - parent.senseRange))
+
+        // Normalize differences (approximate ranges)
+        let normalizedSpeedDiff = speedDiff / 2.0  // mutation range is ±0-2
+        let normalizedSizeDiff = sizeDiff / 0.2  // mutation range is ±0-0.2
+        let normalizedSenseDiff = senseRangeDiff / 20.0  // mutation range is ±0-20
+
+        let totalMutation = (normalizedSpeedDiff + normalizedSizeDiff + normalizedSenseDiff) / 3.0
+
+        // Only show indicator if mutation is significant
+        if totalMutation > 0.3 {
+            let (text, color, size) = if totalMutation > 0.8 {
+                ("⚡⚡⚡", SKColor.magenta, CGFloat(16))  // Major mutation
+            } else if totalMutation > 0.5 {
+                ("⚡⚡", SKColor.orange, CGFloat(14))  // Moderate mutation
+            } else {
+                ("⚡", SKColor.yellow, CGFloat(12))  // Minor mutation
+            }
+
+            // Create indicator
+            let label = SKLabelNode(text: text)
+            label.fontSize = size
+            label.position = CGPoint(x: position.x + 15, y: position.y + 10)
+            label.zPosition = 101
+            label.alpha = 0
+
+            addChild(label)
+
+            // Pulse and fade
+            let fadeIn = SKAction.fadeIn(withDuration: 0.2)
+            let pulse = SKAction.sequence([
+                SKAction.scale(to: 1.3, duration: 0.15),
+                SKAction.scale(to: 1.0, duration: 0.15)
+            ])
+            let wait = SKAction.wait(forDuration: 0.8)
+            let fadeOut = SKAction.fadeOut(withDuration: 0.3)
+            let remove = SKAction.removeFromParent()
+
+            label.run(SKAction.sequence([fadeIn, SKAction.group([pulse, wait]), fadeOut, remove]))
+        }
     }
 
     // MARK: - Food Scarcity Warning
