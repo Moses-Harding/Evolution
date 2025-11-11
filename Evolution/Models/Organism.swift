@@ -211,6 +211,25 @@ class Organism: Identifiable, Equatable {
         return configuration.baseOrganismRadius * size
     }
 
+    // Effective max age (fertility reduces lifespan through pleiotropy)
+    var effectiveMaxAge: Int {
+        guard configuration.pleiotropyEnabled else { return maxAge }
+
+        // Higher fertility = shorter lifespan (trade-off)
+        let fertilityPenalty = (fertility - 1.0) * configuration.fertilityLongevityTradeoff
+        let ageMultiplier = 1.0 - fertilityPenalty
+        return Int(Double(maxAge) * max(0.5, ageMultiplier))  // At least 50% of base lifespan
+    }
+
+    // Effective defense (aggression reduces defense through pleiotropy)
+    var effectiveDefense: Double {
+        guard configuration.pleiotropyEnabled else { return defense }
+
+        // Higher aggression = lower defense (trade-off)
+        let aggressionPenalty = aggression * configuration.aggressionDefenseTradeoff
+        return max(0.0, defense - aggressionPenalty)
+    }
+
     // Calculate movement for this frame
     func move(towards target: CGPoint, deltaTime: TimeInterval, terrainMultiplier: Double = 1.0) -> (newPosition: CGPoint, energyCost: Double) {
         let dx = target.x - position.x
@@ -234,7 +253,14 @@ class Organism: Identifiable, Equatable {
         // Calculate energy cost based on distance moved and efficiency
         // Difficult terrain costs more energy (inverse of speed multiplier)
         let terrainEnergyCost = 2.0 - terrainMultiplier  // 1.0 for normal, up to 2.0 for difficult
-        let energyCost = Double(moveDistance) * configuration.energyCostPerMove * terrainEnergyCost / energyEfficiency
+
+        // Pleiotropy: Larger sense range costs more energy to maintain
+        var senseEnergyCost = 1.0
+        if configuration.pleiotropyEnabled {
+            senseEnergyCost = 1.0 + (Double(self.senseRange) * configuration.senseEnergyTradeoff)
+        }
+
+        let energyCost = Double(moveDistance) * configuration.energyCostPerMove * terrainEnergyCost * senseEnergyCost / energyEfficiency
 
         return (CGPoint(x: position.x + moveX, y: position.y + moveY), energyCost)
     }
@@ -253,7 +279,7 @@ class Organism: Identifiable, Equatable {
     }
 
     var isDead: Bool {
-        return isStarving || age >= maxAge
+        return isStarving || age >= effectiveMaxAge
     }
 
     func incrementAge() {

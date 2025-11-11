@@ -126,6 +126,13 @@ struct GameConfiguration {
     var speciationThreshold: Double = 0.35  // Genetic distance threshold for speciation (0.0-1.0)
     var speciationEnabled: Bool = true
 
+    // MARK: - Gene Linkage (Pleiotropy)
+    var pleiotropyEnabled: Bool = true
+    var sizeSpeedTradeoff: Double = 0.5  // How much size reduces speed (already exists, keeping it)
+    var fertilityLongevityTradeoff: Double = 0.4  // Fertility reduces lifespan
+    var senseEnergyTradeoff: Double = 0.00015  // Larger sense range increases energy cost
+    var aggressionDefenseTradeoff: Double = 0.6  // Aggression reduces defense capability
+
     // MARK: - Presets
     static let `default` = GameConfiguration()
 
