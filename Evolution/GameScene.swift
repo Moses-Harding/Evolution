@@ -28,8 +28,6 @@ class GameScene: SKScene {
     private var selectionIndicator: SKShapeNode?
 
     private var currentDay: Int = 0
-    private var dayStartTime: TimeInterval = 0  // Track when current day started
-    private let maxDayDuration: TimeInterval = 30.0  // Maximum seconds per day before forcing end
     var showSenseRanges: Bool = true  // Toggle for sense range visualization
     var showTrails: Bool = true  // Toggle for movement trails
     private let maxTrailLength: Int = 20  // Maximum trail segments per organism
@@ -53,6 +51,7 @@ class GameScene: SKScene {
 
     // MARK: - Publishers
     let statisticsPublisher = PassthroughSubject<GameStatistics, Never>()
+    let selectedOrganismPublisher = PassthroughSubject<Organism?, Never>()
 
     // MARK: - Initialization
     init(size: CGSize, configuration: GameConfiguration) {
@@ -69,6 +68,9 @@ class GameScene: SKScene {
     override func didMove(to view: SKView) {
         backgroundColor = .black
 
+        // Enable user interaction for tap detection
+        isUserInteractionEnabled = true
+
         // Configure view for background execution
         view.ignoresSiblingOrder = true
         view.shouldCullNonVisibleNodes = false
@@ -79,8 +81,86 @@ class GameScene: SKScene {
         showLegend()
     }
 
+    // MARK: - Playable Bounds and Safe Areas
+    private var safeAreaInsets: UIEdgeInsets = .zero
+    private let margin: CGFloat = 20
+
+    private var playableMinX: CGFloat {
+        return safeAreaInsets.left + margin
+    }
+
+    private var playableMaxX: CGFloat {
+        return size.width - safeAreaInsets.right - margin
+    }
+
+    private var playableMinY: CGFloat {
+        return safeAreaInsets.bottom + margin  // SpriteKit origin is bottom-left
+    }
+
+    private var playableMaxY: CGFloat {
+        return size.height - safeAreaInsets.top - margin
+    }
+
+    // MARK: - Layout Updates
+    func updateLayoutForNewSize(_ newSize: CGSize, safeAreaInsets: UIEdgeInsets = .zero) {
+        // Update safe area insets
+        self.safeAreaInsets = safeAreaInsets
+
+        // Update legend position to respect safe area
+        if let legend = childNode(withName: "legend") {
+            // Position legend below safe area (accounting for top safe area)
+            let legendX = newSize.width - safeAreaInsets.right - 120
+            let legendY = newSize.height - safeAreaInsets.top - 80
+            legend.position = CGPoint(x: legendX, y: legendY)
+        }
+
+        // Update stats panel position if visible (using safe area aware bounds)
+        if let statsPanel = self.statsPanel {
+            let panelWidth: CGFloat = 300
+            let panelHeight: CGFloat = 400
+            // Keep panel within playable bounds which now includes safe area
+            let panelX = min(playableMaxX - panelWidth / 2, max(playableMinX + panelWidth / 2, statsPanel.position.x))
+            let panelY = min(playableMaxY - panelHeight / 2, max(playableMinY + panelHeight / 2, statsPanel.position.y))
+            statsPanel.position = CGPoint(x: panelX, y: panelY)
+        }
+
+        // Reposition any organisms that are now out of bounds
+        for organism in organisms {
+            if organism.position.x < playableMinX || organism.position.x > playableMaxX ||
+               organism.position.y < playableMinY || organism.position.y > playableMaxY {
+                // Clamp position to playable bounds
+                organism.position.x = max(playableMinX, min(playableMaxX, organism.position.x))
+                organism.position.y = max(playableMinY, min(playableMaxY, organism.position.y))
+
+                // Update the visual node
+                if let node = organismNodes[organism.id] {
+                    node.position = organism.position
+                }
+            }
+        }
+
+        // Reposition any food that is now out of bounds
+        for foodItem in food {
+            if foodItem.position.x < playableMinX || foodItem.position.x > playableMaxX ||
+               foodItem.position.y < playableMinY || foodItem.position.y > playableMaxY {
+                // Clamp position to playable bounds
+                foodItem.position.x = max(playableMinX, min(playableMaxX, foodItem.position.x))
+                foodItem.position.y = max(playableMinY, min(playableMaxY, foodItem.position.y))
+
+                // Update the visual node
+                if let node = foodNodes[foodItem.id] {
+                    node.position = foodItem.position
+                }
+            }
+        }
+    }
+
     private func showLegend() {
+        // Remove existing legend if any
+        childNode(withName: "legend")?.removeFromParent()
+
         let legend = SKNode()
+        legend.name = "legend"
         legend.zPosition = 100
 
         // Position in top right corner
@@ -148,8 +228,14 @@ class GameScene: SKScene {
 
     private func setupInitialPopulation() {
         for _ in 0..<configuration.initialPopulation {
-            let randomX = CGFloat.random(in: 50...(size.width - 50))
-            let randomY = CGFloat.random(in: 50...(size.height - 50))
+            // Use playable bounds, or default if not yet set
+            let minX = playableMinX > 0 ? playableMinX : 50
+            let maxX = playableMaxX > minX ? playableMaxX : size.width - 50
+            let minY = playableMinY > 0 ? playableMinY : 50
+            let maxY = playableMaxY > minY ? playableMaxY : size.height - 50
+
+            let randomX = CGFloat.random(in: minX...max(minX + 1, maxX))
+            let randomY = CGFloat.random(in: minY...max(minY + 1, maxY))
             let organism = Organism(
                 speed: configuration.initialSpeed,
                 senseRange: configuration.initialSenseRange,
@@ -204,15 +290,29 @@ class GameScene: SKScene {
 
     private func generateFoodPositions(count: Int, pattern: FoodPattern) -> [CGPoint] {
         var positions: [CGPoint] = []
-        let margin: CGFloat = 30
-        let centerX = size.width / 2
-        let centerY = size.height / 2
+
+        // Use playable bounds
+        let minX = playableMinX > 0 ? playableMinX : 30
+        let maxX = playableMaxX > minX ? playableMaxX : size.width - 30
+        let minY = playableMinY > 0 ? playableMinY : 30
+        let maxY = playableMaxY > minY ? playableMaxY : size.height - 30
+
+        // If scene is too small, just return center positions
+        if maxX <= minX || maxY <= minY {
+            for _ in 0..<count {
+                positions.append(CGPoint(x: size.width / 2, y: size.height / 2))
+            }
+            return positions
+        }
+
+        let centerX = (minX + maxX) / 2
+        let centerY = (minY + maxY) / 2
 
         switch pattern {
         case .random:
             for _ in 0..<count {
-                let x = CGFloat.random(in: margin...(size.width - margin))
-                let y = CGFloat.random(in: margin...(size.height - margin))
+                let x = CGFloat.random(in: minX...maxX)
+                let y = CGFloat.random(in: minY...maxY)
                 positions.append(CGPoint(x: x, y: y))
             }
 
@@ -222,52 +322,56 @@ class GameScene: SKScene {
             let itemsPerCluster = count / clusterCount
 
             for _ in 0..<clusterCount {
-                let clusterX = CGFloat.random(in: margin...(size.width - margin))
-                let clusterY = CGFloat.random(in: margin...(size.height - margin))
-                let clusterRadius: CGFloat = 80
+                let clusterX = CGFloat.random(in: minX...maxX)
+                let clusterY = CGFloat.random(in: minY...maxY)
+                let clusterRadius: CGFloat = min(80, (maxX - minX) / 4, (maxY - minY) / 4)
 
                 for _ in 0..<itemsPerCluster {
                     let angle = CGFloat.random(in: 0...(2 * .pi))
                     let radius = CGFloat.random(in: 0...clusterRadius)
                     let x = clusterX + cos(angle) * radius
                     let y = clusterY + sin(angle) * radius
-                    let clampedX = max(margin, min(size.width - margin, x))
-                    let clampedY = max(margin, min(size.height - margin, y))
+                    let clampedX = max(minX, min(maxX, x))
+                    let clampedY = max(minY, min(maxY, y))
                     positions.append(CGPoint(x: clampedX, y: clampedY))
                 }
             }
 
             // Add remaining items randomly
             for _ in positions.count..<count {
-                let x = CGFloat.random(in: margin...(size.width - margin))
-                let y = CGFloat.random(in: margin...(size.height - margin))
+                let x = CGFloat.random(in: minX...maxX)
+                let y = CGFloat.random(in: minY...maxY)
                 positions.append(CGPoint(x: x, y: y))
             }
 
         case .scattered:
             // Divide area into grid and place one item per cell
-            let cols = Int(sqrt(Double(count)))
-            let rows = (count + cols - 1) / cols
-            let cellWidth = (size.width - 2 * margin) / CGFloat(cols)
-            let cellHeight = (size.height - 2 * margin) / CGFloat(rows)
+            let cols = max(1, Int(sqrt(Double(count))))
+            let rows = max(1, (count + cols - 1) / cols)
+            let cellWidth = max(1, (maxX - minX) / CGFloat(cols))
+            let cellHeight = max(1, (maxY - minY) / CGFloat(rows))
 
             for i in 0..<count {
                 let col = i % cols
                 let row = i / cols
-                let x = margin + CGFloat(col) * cellWidth + CGFloat.random(in: 0...cellWidth)
-                let y = margin + CGFloat(row) * cellHeight + CGFloat.random(in: 0...cellHeight)
+                let cellX = minX + CGFloat(col) * cellWidth
+                let cellY = minY + CGFloat(row) * cellHeight
+                let x = cellX + CGFloat.random(in: 0...min(cellWidth, maxX - cellX))
+                let y = cellY + CGFloat.random(in: 0...min(cellHeight, maxY - cellY))
                 positions.append(CGPoint(x: x, y: y))
             }
 
         case .ring:
             // Spawn food in a ring around the center
-            let radius = min(size.width, size.height) / 3
+            let radius = min(maxX - minX, maxY - minY) / 3
             for i in 0..<count {
                 let angle = (2 * .pi * CGFloat(i)) / CGFloat(count)
-                let radiusVariation = CGFloat.random(in: -30...30)
+                let radiusVariation = CGFloat.random(in: -min(30, radius/2)...min(30, radius/2))
                 let x = centerX + cos(angle) * (radius + radiusVariation)
                 let y = centerY + sin(angle) * (radius + radiusVariation)
-                positions.append(CGPoint(x: x, y: y))
+                let clampedX = max(minX, min(maxX, x))
+                let clampedY = max(minY, min(maxY, y))
+                positions.append(CGPoint(x: clampedX, y: clampedY))
             }
         }
 
@@ -287,7 +391,10 @@ class GameScene: SKScene {
         label.fontName = "Helvetica-Bold"
         label.fontSize = 24
         label.fontColor = .cyan
-        label.position = CGPoint(x: size.width / 2, y: size.height - 50)
+        // Position below safe area
+        let centerX = (playableMinX + playableMaxX) / 2
+        let topY = playableMaxY > 0 ? playableMaxY - 30 : size.height - 50
+        label.position = CGPoint(x: centerX, y: topY)
         label.zPosition = 1000
         label.alpha = 0
 
@@ -305,13 +412,8 @@ class GameScene: SKScene {
     override func update(_ currentTime: TimeInterval) {
         let deltaTime = (1.0 / 60.0) * timeScale  // Apply time scale
 
-        // Initialize day start time on first frame
-        if dayStartTime == 0 {
-            dayStartTime = currentTime
-        }
-
         // Check if day should end
-        if shouldEndDay(currentTime: currentTime) {
+        if shouldEndDay() {
             // End of day - handle reproduction and death
             endDay()
             currentDay += 1
@@ -319,7 +421,6 @@ class GameScene: SKScene {
             showDayTransition()
             spawnFood()
             resetOrganismsForNewDay()
-            dayStartTime = currentTime  // Reset timer for new day
         } else {
             // Continue movement and collision detection
             updateOrganisms(deltaTime: deltaTime)
@@ -330,15 +431,11 @@ class GameScene: SKScene {
         updateSelectionIndicator()
     }
 
-    private func shouldEndDay(currentTime: TimeInterval) -> Bool {
-        // Calculate how long current day has been running
-        let dayDuration = currentTime - dayStartTime
-
+    private func shouldEndDay() -> Bool {
         // Day ends when:
         // 1. All food is claimed, OR
-        // 2. All organisms have eaten, OR
-        // 3. Maximum day duration exceeded (prevents getting stuck)
-        return allFoodClaimed() || allOrganismsFed() || dayDuration >= maxDayDuration
+        // 2. All organisms have eaten
+        return allFoodClaimed() || allOrganismsFed()
     }
 
     private func allOrganismsFed() -> Bool {
@@ -360,7 +457,12 @@ class GameScene: SKScene {
             // Move towards target food
             if let target = organism.targetFood, !organism.hasFoodToday {
                 let oldPosition = organism.position
-                let newPosition = organism.move(towards: target.position, deltaTime: deltaTime)
+                var newPosition = organism.move(towards: target.position, deltaTime: deltaTime)
+
+                // Clamp to playable bounds
+                newPosition.x = max(playableMinX, min(playableMaxX, newPosition.x))
+                newPosition.y = max(playableMinY, min(playableMaxY, newPosition.y))
+
                 organism.position = newPosition
 
                 // Add trail segment if position changed significantly
@@ -498,9 +600,10 @@ class GameScene: SKScene {
                 )
 
                 // Clamp to scene bounds
+                // Clamp to playable bounds
                 let clampedPosition = CGPoint(
-                    x: max(20, min(size.width - 20, childPosition.x)),
-                    y: max(20, min(size.height - 20, childPosition.y))
+                    x: max(playableMinX, min(playableMaxX, childPosition.x)),
+                    y: max(playableMinY, min(playableMaxY, childPosition.y))
                 )
 
                 let child = organism.reproduce(at: clampedPosition)
@@ -615,6 +718,7 @@ class GameScene: SKScene {
         // Deselect if this organism is selected
         if selectedOrganismId == organism.id {
             deselectOrganism()
+            selectedOrganismPublisher.send(nil)
         }
 
         // Remove sense range indicator
@@ -1585,13 +1689,16 @@ class GameScene: SKScene {
             if selectedOrganismId == organism.id {
                 // Tapped same organism - deselect
                 deselectOrganism()
+                selectedOrganismPublisher.send(nil)
             } else {
                 // Select new organism
                 selectOrganism(organism)
+                selectedOrganismPublisher.send(organism)
             }
         } else {
             // Tapped on empty space - deselect
             deselectOrganism()
+            selectedOrganismPublisher.send(nil)
         }
     }
 
