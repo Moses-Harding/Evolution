@@ -21,8 +21,6 @@ class GameScene: SKScene {
     private var corpsePositions: [CGPoint] = []  // Store positions of dead organisms
 
     private var currentDay: Int = 0
-    private var dayTimer: TimeInterval = 0.0
-    private var isMovementPhase: Bool = true
 
     // Speed control
     var timeScale: Double = 1.0  // Can be set to 2.0 for super speed
@@ -99,31 +97,30 @@ class GameScene: SKScene {
     override func update(_ currentTime: TimeInterval) {
         let deltaTime = (1.0 / 60.0) * timeScale  // Apply time scale
 
-        dayTimer += deltaTime
-
-        if dayTimer >= configuration.dayCycleDuration {
+        // Check if day should end
+        if shouldEndDay() {
             // End of day - handle reproduction and death
             endDay()
-            dayTimer = 0.0
             currentDay += 1
-            isMovementPhase = true
             statistics.currentDay = currentDay
             showDayTransition()
-        } else if dayTimer >= configuration.movementPhaseDuration && isMovementPhase {
-            // End movement phase
-            isMovementPhase = false
-        }
-
-        if isMovementPhase {
+            spawnFood()
+            resetOrganismsForNewDay()
+        } else {
+            // Continue movement and collision detection
             updateOrganisms(deltaTime: deltaTime)
             checkCollisions()
-
-            // Auto-advance if all food is eaten
-            if allFoodClaimed() {
-                dayTimer = configuration.movementPhaseDuration
-                isMovementPhase = false
-            }
         }
+    }
+
+    private func shouldEndDay() -> Bool {
+        // Day ends when either all food is eaten OR all organisms have eaten
+        return allFoodClaimed() || allOrganismsFed()
+    }
+
+    private func allOrganismsFed() -> Bool {
+        // Need at least one organism, and all must have food
+        return !organisms.isEmpty && organisms.allSatisfy { $0.hasFoodToday }
     }
 
     private func allFoodClaimed() -> Bool {
@@ -204,39 +201,42 @@ class GameScene: SKScene {
 
                     // Add celebration particles and effects
                     addFeedingCelebration(at: organism.position, color: organism.color)
-
-                    // Immediate reproduction attempt
-                    if Double.random(in: 0...1) < configuration.reproductionProbability {
-                        let angle = Double.random(in: 0...(2 * .pi))
-                        let offsetX = cos(angle) * configuration.spawnDistance
-                        let offsetY = sin(angle) * configuration.spawnDistance
-                        let childPosition = CGPoint(
-                            x: organism.position.x + CGFloat(offsetX),
-                            y: organism.position.y + CGFloat(offsetY)
-                        )
-
-                        // Clamp to scene bounds
-                        let clampedPosition = CGPoint(
-                            x: max(20, min(size.width - 20, childPosition.x)),
-                            y: max(20, min(size.height - 20, childPosition.y))
-                        )
-
-                        let child = organism.reproduce(at: clampedPosition)
-
-                        // Show dramatic reproduction with buildup -> POP -> split
-                        showDramaticReproduction(parent: organism, child: child, childPosition: clampedPosition)
-
-                        // Track birth in statistics
-                        statistics.births += 1
-                    }
                 }
             }
         }
     }
 
     private func endDay() {
+        var births = 0
         var deaths = 0
         corpsePositions.removeAll()  // Clear previous corpse positions
+
+        // Handle reproduction for all organisms that ate today
+        let fedOrganisms = organisms.filter { $0.hasFoodToday }
+        for organism in fedOrganisms {
+            if Double.random(in: 0...1) < configuration.reproductionProbability {
+                let angle = Double.random(in: 0...(2 * .pi))
+                let offsetX = cos(angle) * configuration.spawnDistance
+                let offsetY = sin(angle) * configuration.spawnDistance
+                let childPosition = CGPoint(
+                    x: organism.position.x + CGFloat(offsetX),
+                    y: organism.position.y + CGFloat(offsetY)
+                )
+
+                // Clamp to scene bounds
+                let clampedPosition = CGPoint(
+                    x: max(20, min(size.width - 20, childPosition.x)),
+                    y: max(20, min(size.height - 20, childPosition.y))
+                )
+
+                let child = organism.reproduce(at: clampedPosition)
+
+                // Show dramatic reproduction with buildup -> POP -> split
+                showDramaticReproduction(parent: organism, child: child, childPosition: clampedPosition)
+
+                births += 1
+            }
+        }
 
         // Handle deaths (organisms that didn't eat)
         let survivors = organisms.filter { organism in
@@ -252,6 +252,13 @@ class GameScene: SKScene {
 
         organisms = survivors
 
+        // Update statistics
+        statistics.births = births
+        statistics.deaths = deaths
+        updateStatistics()
+    }
+
+    private func resetOrganismsForNewDay() {
         // Reset all organisms for next day
         for organism in organisms {
             organism.hasFoodToday = false
@@ -264,15 +271,8 @@ class GameScene: SKScene {
             }
         }
 
-        // Update statistics
-        statistics.deaths = deaths
-        updateStatistics()
-
         // Reset births counter for next day
         statistics.births = 0
-
-        // Spawn new food for next day
-        spawnFood()
     }
 
     // MARK: - Organism Management
