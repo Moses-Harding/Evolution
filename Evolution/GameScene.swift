@@ -813,6 +813,26 @@ class GameScene: SKScene {
         return species[organism.speciesId]?.color ?? Species.generateColor(for: organism.speciesId)
     }
 
+    private func applyAgeDarkening(color: SKColor, organism: Organism) -> SKColor {
+        // Calculate age ratio (0.0 = newborn, 1.0 = max age)
+        let ageRatio = Double(organism.age) / Double(organism.maxAge)
+
+        // Extract RGB components
+        var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
+        color.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+
+        // Apply darkening based on age (older = darker)
+        // Darkening starts becoming noticeable after 50% of max age
+        let darkeningFactor = max(0, (ageRatio - 0.5) * 2.0)  // 0.0 to 1.0
+        let darkeningAmount = CGFloat(darkeningFactor * 0.4)  // Max 40% darkening
+
+        let darkenedRed = max(0, red - darkeningAmount)
+        let darkenedGreen = max(0, green - darkeningAmount)
+        let darkenedBlue = max(0, blue - darkeningAmount)
+
+        return SKColor(red: darkenedRed, green: darkenedGreen, blue: darkenedBlue, alpha: alpha)
+    }
+
     // MARK: - Terrain Management
     private func spawnTerrainPatches() {
         // Clear old terrain
@@ -1553,7 +1573,8 @@ class GameScene: SKScene {
         // Create organism visual node (size-based radius)
         let node = SKShapeNode(circleOfRadius: CGFloat(organism.effectiveRadius))
         let speciesColor = getSpeciesColor(for: organism)
-        node.fillColor = speciesColor
+        let ageAdjustedColor = applyAgeDarkening(color: speciesColor, organism: organism)
+        node.fillColor = ageAdjustedColor
         node.strokeColor = .clear
         node.position = organism.position
         node.zPosition = 10
