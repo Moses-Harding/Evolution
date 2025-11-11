@@ -133,6 +133,16 @@ struct GameView: View {
                         )
                     )
                     .animation(.easeInOut(duration: 0.2), value: viewModel.selectedOrganism != nil)
+                    .onAppear {
+                        print("🟡 GameView: OrganismStatsModal appeared for organism \(organism.id)")
+                    }
+                    .onDisappear {
+                        print("🟡 GameView: OrganismStatsModal disappeared")
+                    }
+                } else {
+                    Color.clear.onAppear {
+                        print("🟡 GameView: Modal overlay is showing Color.clear (no organism selected)")
+                    }
                 }
             }
         )
@@ -360,7 +370,13 @@ class GameViewModel: ObservableObject {
         scene.selectedOrganismPublisher
             .receive(on: DispatchQueue.main)
             .sink { [weak self] organism in
+                if let organism = organism {
+                    print("🔵 GameViewModel: Received organism \(organism.id), setting selectedOrganism")
+                } else {
+                    print("🔵 GameViewModel: Received nil, clearing selectedOrganism")
+                }
                 self?.selectedOrganism = organism
+                print("🔵 GameViewModel: selectedOrganism is now \(self?.selectedOrganism?.id?.uuidString ?? "nil")")
             }
             .store(in: &cancellables)
     }

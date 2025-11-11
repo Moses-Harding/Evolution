@@ -1681,15 +1681,19 @@ class GameScene: SKScene {
             // Tapped on an organism - show its stats
             if selectedOrganismId == organism.id {
                 // Tapped same organism - deselect
+                print("🔴 GameScene: Deselecting organism \(organism.id)")
                 deselectOrganism()
                 selectedOrganismPublisher.send(nil)
             } else {
                 // Select new organism
+                print("🟢 GameScene: Selecting organism \(organism.id)")
                 selectOrganism(organism)
+                print("🟢 GameScene: Sending organism to publisher")
                 selectedOrganismPublisher.send(organism)
             }
         } else {
             // Tapped on empty space - deselect
+            print("🔴 GameScene: Tapped empty space, deselecting")
             deselectOrganism()
             selectedOrganismPublisher.send(nil)
         }
