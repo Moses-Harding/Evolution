@@ -321,6 +321,23 @@ struct GameControls: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 12) {
+                // Pause/Resume toggle
+                Button(action: {
+                    viewModel.isPaused.toggle()
+                }) {
+                    HStack(spacing: 6) {
+                        Image(systemName: viewModel.isPaused ? "play.fill" : "pause.fill")
+                        Text(viewModel.isPaused ? "Resume" : "Pause")
+                            .fontWeight(.bold)
+                    }
+                    .font(.system(size: 16))
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(viewModel.isPaused ? Color.green : Color.red)
+                    .foregroundColor(.white)
+                    .cornerRadius(8)
+                }
+
                 // Super speed toggle
                 Button(action: {
                     viewModel.isSuperSpeed.toggle()
@@ -435,6 +452,11 @@ class GameViewModel: ObservableObject {
     @Published var obstacleType: ObstacleType = .wall {
         didSet {
             scene.currentObstacleType = obstacleType
+        }
+    }
+    @Published var isPaused: Bool = false {
+        didSet {
+            scene.isPaused = isPaused
         }
     }
 
