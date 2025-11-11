@@ -11,11 +11,16 @@ struct GameConfiguration {
     // MARK: - Population Settings
     var initialPopulation: Int = 10
     var initialSpeed: Int = 10
+    var initialSenseRange: Int = 150
 
     // MARK: - Evolution Parameters
     var minSpeed: Int = 1
     var maxSpeed: Int = 30
     var mutationRange: Int = 2  // Speed can mutate by ±mutationRange
+
+    var minSenseRange: Int = 50
+    var maxSenseRange: Int = 400
+    var senseRangeMutationRange: Int = 20  // Sense range can mutate by ±senseRangeMutationRange
 
     // MARK: - Food Settings
     var foodPerDay: Int = 5

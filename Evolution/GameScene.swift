@@ -61,6 +61,7 @@ class GameScene: SKScene {
             let randomY = CGFloat.random(in: 50...(size.height - 50))
             let organism = Organism(
                 speed: configuration.initialSpeed,
+                senseRange: configuration.initialSenseRange,
                 position: CGPoint(x: randomX, y: randomY),
                 generation: 0,
                 configuration: configuration
@@ -150,13 +151,15 @@ class GameScene: SKScene {
     private func findNearestUnclaimedFood(for organism: Organism) -> Food? {
         var nearest: Food?
         var nearestDistance: CGFloat = .infinity
+        let maxSenseDistance = CGFloat(organism.senseRange)
 
         for foodItem in food where !foodItem.isClaimed {
             let dx = foodItem.position.x - organism.position.x
             let dy = foodItem.position.y - organism.position.y
             let distance = sqrt(dx * dx + dy * dy)
 
-            if distance < nearestDistance {
+            // Only consider food within sense range
+            if distance <= maxSenseDistance && distance < nearestDistance {
                 nearestDistance = distance
                 nearest = foodItem
             }
@@ -413,17 +416,26 @@ class GameScene: SKScene {
             statistics.averageSpeed = 0.0
             statistics.minSpeed = 0
             statistics.maxSpeed = 0
+            statistics.averageSenseRange = 0.0
+            statistics.minSenseRange = 0
+            statistics.maxSenseRange = 0
         } else {
             let speeds = organisms.map { $0.speed }
             statistics.averageSpeed = Double(speeds.reduce(0, +)) / Double(speeds.count)
             statistics.minSpeed = speeds.min() ?? 0
             statistics.maxSpeed = speeds.max() ?? 0
+
+            let senseRanges = organisms.map { $0.senseRange }
+            statistics.averageSenseRange = Double(senseRanges.reduce(0, +)) / Double(senseRanges.count)
+            statistics.minSenseRange = senseRanges.min() ?? 0
+            statistics.maxSenseRange = senseRanges.max() ?? 0
         }
 
         statistics.organisms = organisms.map { organism in
             OrganismInfo(
                 id: organism.id,
                 speed: organism.speed,
+                senseRange: organism.senseRange,
                 generation: organism.generation,
                 hasFoodToday: organism.hasFoodToday
             )
@@ -1070,6 +1082,9 @@ struct GameStatistics {
     var averageSpeed: Double = 0.0
     var minSpeed: Int = 0
     var maxSpeed: Int = 0
+    var averageSenseRange: Double = 0.0
+    var minSenseRange: Int = 0
+    var maxSenseRange: Int = 0
     var births: Int = 0
     var deaths: Int = 0
     var organisms: [OrganismInfo] = []
@@ -1079,6 +1094,7 @@ struct GameStatistics {
 struct OrganismInfo: Identifiable {
     let id: UUID
     let speed: Int
+    let senseRange: Int
     let generation: Int
     let hasFoodToday: Bool
 }
