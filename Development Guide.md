@@ -23,32 +23,392 @@ You should:
 - Don't wait for approval between features - work autonomously
 - Don't ask clarifying questions unless truly blocked - make reasonable assumptions
 
-### Development Philosophy
+---
 
-The goal is to create a rich, complex evolution simulation that demonstrates natural selection principles through engaging gameplay. Consider adding:
+## Long-Term Vision: Playing God
 
-**Core Systems:**
-- More evolutionary traits and trade-offs
-- Environmental variety and challenges
-- Behavioral AI and decision-making
-- Population dynamics and interactions
-- Visual polish and feedback
+### Core Philosophy
 
-**Technical Improvements:**
-- Performance optimizations
-- Better UI/UX
-- Data visualization and analytics
-- Save/load functionality
-- Configuration options
+**The user is playing God.** They create an initial organism with starting traits, then watch as evolution unfolds through random mutation and environmental pressure. The user's role is **not** to directly control organisms, but to:
 
-**Biological Realism:**
-- Food webs and ecological relationships
-- Genetic inheritance and speciation
-- Environmental adaptation
-- Migration and territory
-- Seasonal cycles
+1. **Design the initial conditions** - Set starting traits for the first organism
+2. **Shape the environment** - Add obstacles, adjust temperature, control food distribution
+3. **Observe emergence** - Watch as complex behaviors and capabilities emerge naturally
 
-### Work Style
+**Key principle**: The user defines the starting point; evolution does the rest.
+
+---
+
+## The Ultimate Goal
+
+Create a simulation where **multiple species battle each other** through evolved traits, strategies, and behaviors. Over many generations:
+- Organisms evolve diverse survival strategies
+- Species emerge through genetic divergence and isolation
+- Combat abilities develop through competition
+- Environmental mastery emerges through adaptation
+
+The endgame: **Species warfare** driven entirely by evolutionary pressure.
+
+---
+
+## Genetic & Evolution System
+
+### Emergent Traits Through Underlying Systems
+
+**DO NOT** pre-program complex abilities like "flight" or "swimming" as single toggleable traits.
+
+**INSTEAD**, implement underlying physical properties that **combine** to enable emergent behaviors:
+
+#### Example: Flight Emergence
+Instead of a "canFly" boolean, implement:
+- **Wing size** (affects lift)
+- **Body weight** (affects gravity)
+- **Muscle strength** (affects flapping power)
+- **Bone density** (lighter = easier to lift)
+
+When these traits combine correctly through mutation:
+→ Wing size large enough + body weight low enough + muscle strength sufficient
+→ **Flight emerges naturally**
+
+#### Example: Swimming Emergence
+Underlying traits:
+- **Body density** (buoyancy)
+- **Limb shape/flexibility** (propulsion efficiency)
+- **Lung capacity** (breath holding)
+- **Skin texture** (water resistance)
+
+When combined correctly → **Swimming ability emerges**
+
+### Mutation System
+
+- All traits mutate independently during reproduction
+- Mutations are **small, incremental changes** (not dramatic leaps)
+- Occasionally allow **larger mutations** (rare, random gene shifts)
+- Track **genetic distance** between organisms for speciation
+
+### Gene Linkage (Pleiotropy)
+
+Some genes affect **multiple unrelated traits simultaneously**:
+
+**Example**: Size gene affects:
+- Body size (primary effect)
+- Energy consumption (secondary effect)
+- Heat retention (tertiary effect)
+
+This creates **trade-offs**: Increasing size for combat dominance accidentally increases energy cost and overheating in hot environments.
+
+**Implementation approach**: Define trait linkages in code where logical. Make them discoverable through play.
+
+---
+
+## Species & Speciation
+
+### Defining Species
+
+**Species = reproductive isolation**
+
+Two populations become separate species when:
+1. **Genetic distance exceeds threshold** (e.g., 30% trait divergence)
+2. Cannot produce viable offspring together
+3. Tracked automatically by the system
+
+**No infertile hybrids** - organisms either can or cannot reproduce (binary).
+
+### Speciation Mechanisms
+
+1. **Geographic isolation** - Populations separated by obstacles evolve independently
+2. **Behavioral isolation** - Different mating behaviors prevent interbreeding
+3. **Temporal isolation** - Different reproductive timing
+4. **Genetic drift** - Random mutations accumulate over generations
+
+### Visual Species Identification
+
+**Color/pattern as species marker**:
+- Each species gets a distinct color palette
+- Variations within species (individual differences)
+- Allows user to visually track species diversity
+
+**Additional visual markers**:
+- Body shape variations
+- Pattern types (stripes, spots, solid)
+- Size range differences
+- Movement style differences
+
+---
+
+## Reproduction System
+
+### Sexual Reproduction (Replaces Asexual)
+
+**Sex-based mechanics**:
+- **Male organisms**: Compete for access to females
+- **Female organisms**: Select mates based on traits + proximity
+
+**Mate Selection Process**:
+1. Female becomes receptive (fertility cycle)
+2. Nearby males detect fertile female
+3. Males compete through:
+   - Combat (aggression vs defense)
+   - Display (size, coloration, fitness)
+   - Resource control (territory, food access)
+4. Winner mates with female
+5. Offspring inherit traits from **both parents** (genetic crossover)
+
+**Genetic Crossover**:
+- Each trait has 50% chance from mother, 50% from father
+- Plus mutation on top
+- Creates diverse offspring even from same parents
+
+**Implementation priority**: This is a major system change. Implement after core environmental features are solid.
+
+---
+
+## Environmental Interaction & Control
+
+### Temperature System
+
+**Effects on organisms**:
+- **Cold environments**: Higher energy consumption (metabolism increase)
+- **Hot environments**: Movement speed penalty, faster energy drain
+- **Extreme temperatures**: Death zones
+- **Optimal range**: Each organism has preferred temperature based on traits
+
+**User controls**:
+- Set global temperature
+- Create temperature zones (hot/cold regions)
+- Temperature cycles (day/night, seasonal)
+
+**Evolutionary pressure**: Organisms evolve heat/cold tolerance traits
+
+### Other Environmental Factors
+
+**Water/Moisture**:
+- Dry zones: Increased energy cost
+- Wet zones: Movement changes (requires swimming traits)
+- Organisms need water trait for aquatic environments
+
+**Terrain Types**:
+- **Grassland**: Default, no modifiers
+- **Desert**: Hot, low food, high energy cost
+- **Forest**: Dense obstacles, clustered food
+- **Mountains**: Vertical climbing requirements
+
+**Day/Night Cycles**:
+- Affects visibility (sense range)
+- Energy costs vary by time
+- Enables nocturnal vs diurnal evolution
+
+**Seasonal Changes**:
+- Food abundance varies
+- Temperature shifts
+- Migration pressure
+
+---
+
+## Movement & Locomotion System
+
+### Movement Types (Emergent)
+
+Don't create "movement type" as a selectable option. Instead, **movement capabilities emerge** from physical traits:
+
+#### Ground Movement (Walking)
+- Base: Speed + size penalty
+- Enhanced by: Leg strength, muscle efficiency
+- Limited by: Body weight, terrain type
+
+#### Aquatic Movement (Swimming)
+- Emerges from: Low body density + limb flexibility
+- Enhanced by: Webbed appendages, streamlined shape
+- Limited by: Lung capacity, water temperature tolerance
+
+#### Aerial Movement (Flying)
+- Emerges from: Wing size + low weight + muscle strength
+- Enhanced by: Hollow bones, efficient metabolism
+- Limited by: Energy cost, wind resistance
+
+#### Climbing
+- Emerges from: Grip strength + body flexibility + low weight
+- Enhanced by: Claw development, spatial awareness
+- Limited by: Surface type, vertical distance
+
+#### Jumping/Leaping
+- Emerges from: Leg muscle power + body weight ratio
+- Enhanced by: Reaction time, trajectory calculation
+- Limited by: Landing surface, energy cost
+
+**Implementation**: Gradually add underlying traits. Movement types emerge as trait combinations reach thresholds.
+
+---
+
+## Combat & Resource Competition
+
+### Current System (Food Competition)
+- Organisms contest food when multiple are nearby
+- Aggression vs Defense determines winner
+- Size provides advantage
+
+### Future: Direct Combat
+
+**Predator-Prey System**:
+- Carnivores: Hunt other organisms for food
+- Herbivores: Eat plants/default food
+- Omnivores: Flexible diet
+
+**Combat Mechanics**:
+- **HP system**: Organisms have health
+- **Damage calculation**: Aggression + size + weapons
+- **Defense calculation**: Defense + armor + dodge
+- **Combat initiation**: Proximity + hunger + aggression threshold
+
+**Weapons & Armor (Emergent)**:
+- Sharp appendages emerge from: Claw size + density + sharpness trait
+- Thick hide emerges from: Skin thickness + scale hardness
+- Speed/agility as defense emerges from: Speed + reaction time
+
+### Territorial Behavior
+
+**Territory control**:
+- Organisms claim areas
+- Fight intruders
+- Defend resources within territory
+
+**Pack behavior** (future):
+- Multiple organisms cooperate
+- Share resources
+- Group hunting
+
+---
+
+## Neutral/Aesthetic Traits
+
+Traits that **don't directly affect survival** but provide variation:
+
+### Visual Traits
+- **Coloration**: Base color, pattern overlay
+- **Patterns**: Stripes, spots, gradients, solid
+- **Bioluminescence**: Glow in dark (could affect mate selection)
+- **Body decorations**: Crests, horns, tail features
+
+### Audio Traits (Future)
+- **Calls/sounds**: Different frequencies
+- **Volume**: Loud vs quiet
+
+### Behavioral Quirks (Future)
+- **Movement style**: Smooth, jerky, bouncing
+- **Rest behavior**: Sleep patterns
+- **Social behavior**: Solitary, gregarious, pack
+
+**Purpose**:
+1. Visual diversity makes simulation interesting
+2. Can become sexually selected (peacock effect)
+3. May accidentally correlate with fitness (linkage)
+
+---
+
+## Initial Setup & Creation Menu
+
+### Game Start Flow
+
+1. **Creation Menu** appears
+2. User designs **one initial organism**:
+   - Set starting trait values (sliders/input)
+   - See visual preview
+   - Name the organism (optional)
+3. Simulation begins with this **single organism**
+4. Evolution takes over through reproduction + mutation
+
+### Creation Menu Options
+
+**Physical Traits**:
+- Speed (1-30)
+- Size (0.5-2.0)
+- Sense range (50-400)
+
+**Energy Traits**:
+- Energy efficiency (0.5-1.5)
+- Metabolism (0.5-1.5)
+- Max age (100-400)
+
+**Combat Traits**:
+- Aggression (0-100%)
+- Defense (0-100%)
+
+**Reproduction Traits**:
+- Fertility (0.5-1.5)
+
+**Starting conditions**:
+- Starting energy (0-100)
+- Starting position (click on map)
+
+---
+
+## Development Roadmap Priorities
+
+### Phase 1: Foundation ✅ (Complete)
+- Basic movement and energy
+- Multi-trait evolution
+- Food competition
+- Environmental obstacles
+
+### Phase 2: Environmental Complexity (Next)
+- Temperature zones and effects
+- Different terrain types
+- Seasonal changes
+- Day/night cycles
+- Advanced food distribution patterns
+
+### Phase 3: Species & Genetics
+- Genetic distance tracking
+- Species identification system
+- Color-based species visualization
+- Population divergence mechanics
+- Speciation events
+
+### Phase 4: Sexual Reproduction
+- Male/female sex mechanics
+- Mate competition
+- Genetic crossover inheritance
+- Mate selection behaviors
+
+### Phase 5: Advanced Movement
+- Underlying physical traits for movement
+- Swimming emergence
+- Climbing emergence
+- Flight emergence (long-term)
+
+### Phase 6: Direct Combat
+- HP/damage system
+- Predator-prey mechanics
+- Weapons/armor emergence
+- Territorial behavior
+
+### Phase 7: Complex Behaviors
+- Pack dynamics
+- Migration patterns
+- Social structures
+- Communication systems
+
+### Phase 8: Polish & Scale
+- Performance optimization for 1000+ organisms
+- Advanced visualization
+- Data export and analysis
+- Replay system
+
+---
+
+## Key Design Principles
+
+1. **Emergence over programming** - Complex behaviors emerge from simple rules
+2. **Incremental evolution** - Small mutations compound over time
+3. **Environmental pressure drives adaptation** - Changes force evolution
+4. **Trade-offs everywhere** - No perfect organism, every trait has a cost
+5. **User observes, doesn't control** - God-mode = environment manipulation, not organism control
+6. **Long timescale** - Interesting evolution takes hundreds of generations
+7. **Visual feedback** - User can see evolution happening in real-time
+
+---
+
+## Work Style
 
 When in autonomous mode:
 1. Use TodoWrite to plan your work
