@@ -35,12 +35,14 @@ class GameScene: SKScene {
 
     private var currentDay: Int = 0
     private var currentSeason: Season = .spring
+    private var currentWeather: WeatherEvent = WeatherEvent(type: .clear)
     private var dayNightProgress: Double = 0.0  // 0.0 = midnight, 0.5 = noon, 1.0 = midnight
     var showSenseRanges: Bool = true  // Toggle for sense range visualization
     var showTrails: Bool = true  // Toggle for movement trails
     private let maxTrailLength: Int = 20  // Maximum trail segments per organism
     var showEliteHighlights: Bool = false  // Toggle for elite organism highlighting (disabled by default)
     private var dayNightOverlay: SKShapeNode?  // Visual overlay for day/night
+    private var weatherOverlay: SKShapeNode?  // Visual overlay for weather effects
 
     // Obstacle placement mode
     var isPlacingObstacles: Bool = false
@@ -93,6 +95,7 @@ class GameScene: SKScene {
         spawnTemperatureZones()
         spawnTerrainPatches()
         setupDayNightOverlay()
+        setupWeatherOverlay()
         updateStatistics()
         showLegend()
     }
@@ -475,10 +478,17 @@ class GameScene: SKScene {
     }
 
     private func getEffectiveSenseRange(for organism: Organism) -> Int {
+        var multiplier = 1.0
+
+        // Apply night time modifier
         if isNightTime() && configuration.dayNightCycleEnabled {
-            return Int(Double(organism.senseRange) * configuration.nightSenseRangeMultiplier)
+            multiplier *= configuration.nightSenseRangeMultiplier
         }
-        return organism.senseRange
+
+        // Apply weather visibility modifier
+        multiplier *= getWeatherVisibilityModifier()
+
+        return Int(Double(organism.senseRange) * multiplier)
     }
 
     private func getDayNightEnergyMultiplier() -> Double {
@@ -486,6 +496,88 @@ class GameScene: SKScene {
             return configuration.nightEnergyMultiplier
         }
         return 1.0
+    }
+
+    // MARK: - Weather System
+    private func setupWeatherOverlay() {
+        // Create weather overlay that covers entire scene
+        weatherOverlay = SKShapeNode(rectOf: size)
+        guard let overlay = weatherOverlay else { return }
+
+        overlay.position = CGPoint(x: size.width / 2, y: size.height / 2)
+        overlay.fillColor = currentWeather.type.overlayColor
+        overlay.strokeColor = .clear
+        overlay.zPosition = 99  // Below day/night overlay but above everything else
+        overlay.isUserInteractionEnabled = false
+
+        addChild(overlay)
+    }
+
+    private func updateWeather() {
+        // Decrement current weather duration
+        currentWeather.decrementDay()
+
+        // Check if weather has expired
+        if currentWeather.isExpired {
+            // Generate new weather event
+            let weatherTypes = WeatherEventType.allCases
+            let newWeatherType = weatherTypes.randomElement() ?? .clear
+            currentWeather = WeatherEvent(type: newWeatherType)
+
+            // Show weather transition
+            showWeatherTransition()
+            updateWeatherVisuals()
+        }
+    }
+
+    private func updateWeatherVisuals() {
+        guard let overlay = weatherOverlay else { return }
+
+        // Animate overlay color change
+        let colorChange = SKAction.customAction(withDuration: 1.0) { [weak self] node, elapsed in
+            guard let self = self, let shape = node as? SKShapeNode else { return }
+            let progress = elapsed / 1.0
+            // Smoothly transition to new weather color
+            let oldAlpha = shape.alpha
+            let targetColor = self.currentWeather.type.overlayColor
+            shape.fillColor = targetColor
+            shape.alpha = oldAlpha * (1.0 - progress) + targetColor.components.alpha * progress
+        }
+
+        overlay.run(colorChange)
+    }
+
+    private func showWeatherTransition() {
+        let label = SKLabelNode(text: "\(currentWeather.type.emoji) \(currentWeather.type.rawValue)")
+        label.fontName = "Helvetica-Bold"
+        label.fontSize = 28
+        label.fontColor = .white
+        let centerX = (playableMinX + playableMaxX) / 2
+        let middleY = (playableMinY + playableMaxY) / 2
+        label.position = CGPoint(x: centerX, y: middleY)
+        label.zPosition = 1000
+        label.alpha = 0
+
+        addChild(label)
+
+        let fadeIn = SKAction.fadeIn(withDuration: 0.3)
+        let wait = SKAction.wait(forDuration: 1.5)
+        let fadeOut = SKAction.fadeOut(withDuration: 0.3)
+        let remove = SKAction.removeFromParent()
+
+        label.run(SKAction.sequence([fadeIn, wait, fadeOut, remove]))
+    }
+
+    private func getWeatherVisibilityModifier() -> Double {
+        return currentWeather.type.visibilityModifier
+    }
+
+    private func getWeatherMovementModifier() -> Double {
+        return currentWeather.type.movementModifier
+    }
+
+    private func getWeatherTemperatureModifier() -> Double {
+        return currentWeather.type.temperatureModifier
     }
 
     // MARK: - Seasonal System
@@ -711,8 +803,10 @@ class GameScene: SKScene {
     }
 
     private func getTemperatureAt(position: CGPoint) -> Double {
-        // Start with base temperature + seasonal offset
-        var totalTemperature = configuration.baseTemperature + getSeasonalTemperatureOffset()
+        // Start with base temperature + seasonal offset + weather modifier
+        var totalTemperature = configuration.baseTemperature
+            + getSeasonalTemperatureOffset()
+            + getWeatherTemperatureModifier()
 
         // Add effects from all temperature zones
         for zone in temperatureZones {
@@ -770,6 +864,7 @@ class GameScene: SKScene {
             currentDay += 1
             statistics.currentDay = currentDay
             updateSeason()  // Check for season change
+            updateWeather()  // Check for weather change
             showDayTransition()
             spawnFood()
             resetOrganismsForNewDay()
@@ -817,7 +912,9 @@ class GameScene: SKScene {
             if let target = organism.targetFood, !organism.hasFoodToday {
                 let oldPosition = organism.position
                 let terrainMultiplier = getTerrainSpeedMultiplier(at: organism.position)
-                let (var newPosition, energyCost) = organism.move(towards: target.position, deltaTime: deltaTime, terrainMultiplier: terrainMultiplier)
+                let weatherMultiplier = getWeatherMovementModifier()
+                let combinedMultiplier = terrainMultiplier * weatherMultiplier
+                let (var newPosition, energyCost) = organism.move(towards: target.position, deltaTime: deltaTime, terrainMultiplier: combinedMultiplier)
 
                 // Clamp to playable bounds
                 newPosition.x = max(playableMinX, min(playableMaxX, newPosition.x))
