@@ -1774,6 +1774,32 @@ class GameScene: SKScene {
             )
         }
 
+        // Update active species information
+        statistics.activeSpecies = species.values
+            .filter { !$0.isExtinct && $0.population > 0 }
+            .map { speciesData in
+                // Calculate averages for this species
+                let speciesOrganisms = organisms.filter { $0.speciesId == speciesData.id }
+                let avgSpeed = speciesOrganisms.isEmpty ? 0.0 : Double(speciesOrganisms.map { $0.speed }.reduce(0, +)) / Double(speciesOrganisms.count)
+                let avgSize = speciesOrganisms.isEmpty ? 0.0 : speciesOrganisms.map { $0.size }.reduce(0.0, +) / Double(speciesOrganisms.count)
+                let avgAge = speciesOrganisms.isEmpty ? 0.0 : Double(speciesOrganisms.map { $0.age }.reduce(0, +)) / Double(speciesOrganisms.count)
+
+                var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
+                speciesData.color.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+
+                return SpeciesInfo(
+                    id: speciesData.id,
+                    name: speciesData.name,
+                    color: (red, green, blue),
+                    population: speciesData.population,
+                    foundedOnDay: speciesData.foundedOnDay,
+                    averageSpeed: avgSpeed,
+                    averageSize: avgSize,
+                    averageAge: avgAge
+                )
+            }
+            .sorted { $0.population > $1.population }  // Sort by population
+
         // Create snapshot
         let snapshot = DailySnapshot(
             day: currentDay,
@@ -2850,6 +2876,18 @@ struct GameStatistics {
     var deaths: Int = 0
     var organisms: [OrganismInfo] = []
     var dailySnapshots: [DailySnapshot] = []
+    var activeSpecies: [SpeciesInfo] = []  // Current living species
+}
+
+struct SpeciesInfo: Identifiable {
+    let id: UUID
+    let name: String
+    let color: (red: CGFloat, green: CGFloat, blue: CGFloat)
+    var population: Int
+    let foundedOnDay: Int
+    var averageSpeed: Double
+    var averageSize: Double
+    var averageAge: Double
 }
 
 struct OrganismInfo: Identifiable {

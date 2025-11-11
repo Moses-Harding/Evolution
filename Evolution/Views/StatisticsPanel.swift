@@ -20,6 +20,14 @@ struct StatisticsPanel: View {
                 Divider()
                     .background(Color.white.opacity(0.3))
 
+                // Species Panel - show active species
+                if !viewModel.statistics.activeSpecies.isEmpty {
+                    SpeciesPanelView(species: viewModel.statistics.activeSpecies)
+
+                    Divider()
+                        .background(Color.white.opacity(0.3))
+                }
+
                 // Charts in tabs for better space usage
                 TabView {
                     VStack {
@@ -263,6 +271,86 @@ struct OrganismListView: View {
                 .frame(maxHeight: 300)
             }
         }
+    }
+}
+
+struct SpeciesPanelView: View {
+    let species: [SpeciesInfo]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Species (\(species.count))")
+                .font(.headline)
+                .fontWeight(.semibold)
+                .foregroundColor(.cyan)
+
+            if species.isEmpty {
+                Text("No species alive")
+                    .foregroundColor(.gray)
+                    .padding()
+            } else {
+                VStack(spacing: 6) {
+                    ForEach(species) { speciesData in
+                        SpeciesRow(species: speciesData)
+                    }
+                }
+            }
+        }
+        .padding(.horizontal)
+    }
+}
+
+struct SpeciesRow: View {
+    let species: SpeciesInfo
+
+    var body: some View {
+        HStack(spacing: 10) {
+            // Species color indicator
+            Circle()
+                .fill(Color(red: species.color.red, green: species.color.green, blue: species.color.blue))
+                .frame(width: 16, height: 16)
+                .overlay(
+                    Circle()
+                        .stroke(Color.white.opacity(0.5), lineWidth: 1)
+                )
+
+            // Species name
+            Text(species.name)
+                .font(.system(.caption, design: .rounded))
+                .fontWeight(.semibold)
+                .foregroundColor(.white)
+                .frame(width: 120, alignment: .leading)
+
+            Spacer()
+
+            // Population
+            Text("\(species.population)")
+                .font(.system(.caption, design: .monospaced))
+                .fontWeight(.bold)
+                .foregroundColor(.green)
+                .frame(width: 30, alignment: .trailing)
+
+            // Average speed
+            Text("Spd: \(Int(species.averageSpeed))")
+                .font(.caption2)
+                .foregroundColor(.orange)
+                .frame(width: 50, alignment: .leading)
+
+            // Age at founding
+            Text("Day \(species.foundedOnDay)")
+                .font(.caption2)
+                .foregroundColor(.gray)
+        }
+        .padding(.vertical, 6)
+        .padding(.horizontal, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(Color.black.opacity(0.3))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 6)
+                .stroke(Color(red: species.color.red, green: species.color.green, blue: species.color.blue).opacity(0.3), lineWidth: 1)
+        )
     }
 }
 
