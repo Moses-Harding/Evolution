@@ -28,10 +28,12 @@ class GameScene: SKScene {
     private var selectionIndicator: SKShapeNode?
 
     private var currentDay: Int = 0
+    private var dayStartTime: TimeInterval = 0  // Track when current day started
+    private let maxDayDuration: TimeInterval = 30.0  // Maximum seconds per day before forcing end
     var showSenseRanges: Bool = true  // Toggle for sense range visualization
     var showTrails: Bool = true  // Toggle for movement trails
     private let maxTrailLength: Int = 20  // Maximum trail segments per organism
-    var showEliteHighlights: Bool = true  // Toggle for elite organism highlighting
+    var showEliteHighlights: Bool = false  // Toggle for elite organism highlighting (disabled by default)
 
     // Food distribution patterns
     enum FoodPattern {
@@ -87,7 +89,7 @@ class GameScene: SKScene {
         legend.position = CGPoint(x: legendX, y: legendY)
 
         // Create semi-transparent background
-        let background = SKShapeNode(rectOf: CGSize(width: 220, height: 140), cornerRadius: 8)
+        let background = SKShapeNode(rectOf: CGSize(width: 220, height: 120), cornerRadius: 8)
         background.fillColor = SKColor(white: 0.0, alpha: 0.7)
         background.strokeColor = SKColor(white: 0.4, alpha: 0.8)
         background.lineWidth = 1
@@ -130,7 +132,6 @@ class GameScene: SKScene {
         addLegendItem(color: .blue, text: "Slow (low speed)")
         addLegendItem(color: .red, text: "Fast (high speed)")
         addLegendItem(color: .green, text: "Food")
-        addLegendItem(color: .yellow, glowWidth: 5, text: "Elite (top 20%)")
         addLegendItem(color: SKColor(red: 0.5, green: 0.8, blue: 1.0, alpha: 0.5), text: "Sense range")
 
         // Add tap instruction at bottom
@@ -304,8 +305,13 @@ class GameScene: SKScene {
     override func update(_ currentTime: TimeInterval) {
         let deltaTime = (1.0 / 60.0) * timeScale  // Apply time scale
 
+        // Initialize day start time on first frame
+        if dayStartTime == 0 {
+            dayStartTime = currentTime
+        }
+
         // Check if day should end
-        if shouldEndDay() {
+        if shouldEndDay(currentTime: currentTime) {
             // End of day - handle reproduction and death
             endDay()
             currentDay += 1
@@ -313,6 +319,7 @@ class GameScene: SKScene {
             showDayTransition()
             spawnFood()
             resetOrganismsForNewDay()
+            dayStartTime = currentTime  // Reset timer for new day
         } else {
             // Continue movement and collision detection
             updateOrganisms(deltaTime: deltaTime)
@@ -323,9 +330,15 @@ class GameScene: SKScene {
         updateSelectionIndicator()
     }
 
-    private func shouldEndDay() -> Bool {
-        // Day ends when either all food is eaten OR all organisms have eaten
-        return allFoodClaimed() || allOrganismsFed()
+    private func shouldEndDay(currentTime: TimeInterval) -> Bool {
+        // Calculate how long current day has been running
+        let dayDuration = currentTime - dayStartTime
+
+        // Day ends when:
+        // 1. All food is claimed, OR
+        // 2. All organisms have eaten, OR
+        // 3. Maximum day duration exceeded (prevents getting stuck)
+        return allFoodClaimed() || allOrganismsFed() || dayDuration >= maxDayDuration
     }
 
     private func allOrganismsFed() -> Bool {
