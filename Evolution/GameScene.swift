@@ -19,6 +19,7 @@ class GameScene: SKScene {
     private var obstacles: [Obstacle] = []
     private var organismNodes: [UUID: SKShapeNode] = [:]
     private var senseRangeNodes: [UUID: SKShapeNode] = [:]  // Visual sense range indicators
+    private var energyBarNodes: [UUID: (background: SKShapeNode, bar: SKShapeNode)] = [:]  // Energy bars
     private var trailNodes: [UUID: [SKShapeNode]] = [:]  // Movement trails
     private var foodNodes: [UUID: SKShapeNode] = [:]
     private var obstacleNodes: [UUID: SKShapeNode] = [:]
@@ -426,6 +427,7 @@ class GameScene: SKScene {
             updateOrganisms(deltaTime: deltaTime)
             checkCollisions()
             checkHazardCollisions()
+            updateEnergyBars()
         }
 
         // Update selection indicator position
@@ -562,6 +564,35 @@ class GameScene: SKScene {
         }
 
         return nearest
+    }
+
+    private func updateEnergyBars() {
+        for organism in organisms {
+            guard let energyBar = energyBarNodes[organism.id] else { continue }
+
+            let barWidth: CGFloat = 20
+            let barOffsetY: CGFloat = CGFloat(organism.effectiveRadius) + 5
+
+            // Update positions
+            energyBar.background.position = CGPoint(x: organism.position.x, y: organism.position.y + barOffsetY)
+            energyBar.bar.position = CGPoint(x: organism.position.x, y: organism.position.y + barOffsetY)
+
+            // Update bar width and color based on current energy
+            let energyRatio = organism.energy / configuration.maxEnergy
+            let currentBarWidth = barWidth * CGFloat(energyRatio)
+
+            // Recreate the bar with new width
+            energyBar.bar.removeFromParent()
+            let newEnergyBar = SKShapeNode(rectOf: CGSize(width: currentBarWidth, height: 3))
+            let energyColor = getEnergyColor(ratio: energyRatio)
+            newEnergyBar.fillColor = energyColor
+            newEnergyBar.strokeColor = .clear
+            newEnergyBar.position = CGPoint(x: organism.position.x, y: organism.position.y + barOffsetY)
+            newEnergyBar.zPosition = 12
+            addChild(newEnergyBar)
+
+            energyBarNodes[organism.id] = (background: energyBar.background, bar: newEnergyBar)
+        }
     }
 
     private func checkCollisions() {
@@ -779,6 +810,42 @@ class GameScene: SKScene {
 
         organismNodes[organism.id] = node
         addChild(node)
+
+        // Create energy bar above organism
+        let barWidth: CGFloat = 20
+        let barHeight: CGFloat = 3
+        let barOffsetY: CGFloat = CGFloat(organism.effectiveRadius) + 5
+
+        // Background (gray bar)
+        let barBackground = SKShapeNode(rectOf: CGSize(width: barWidth, height: barHeight))
+        barBackground.fillColor = SKColor(white: 0.3, alpha: 0.8)
+        barBackground.strokeColor = .clear
+        barBackground.position = CGPoint(x: organism.position.x, y: organism.position.y + barOffsetY)
+        barBackground.zPosition = 11
+        addChild(barBackground)
+
+        // Foreground (colored bar showing current energy)
+        let energyRatio = organism.energy / configuration.maxEnergy
+        let currentBarWidth = barWidth * CGFloat(energyRatio)
+        let energyBar = SKShapeNode(rectOf: CGSize(width: currentBarWidth, height: barHeight))
+        let energyColor = getEnergyColor(ratio: energyRatio)
+        energyBar.fillColor = energyColor
+        energyBar.strokeColor = .clear
+        energyBar.position = CGPoint(x: organism.position.x, y: organism.position.y + barOffsetY)
+        energyBar.zPosition = 12
+        addChild(energyBar)
+
+        energyBarNodes[organism.id] = (background: barBackground, bar: energyBar)
+    }
+
+    private func getEnergyColor(ratio: Double) -> SKColor {
+        if ratio < 0.3 {
+            return SKColor(red: 1.0, green: 0.0, blue: 0.0, alpha: 0.9)  // Red
+        } else if ratio < 0.6 {
+            return SKColor(red: 1.0, green: 0.6, blue: 0.0, alpha: 0.9)  // Orange
+        } else {
+            return SKColor(red: 0.0, green: 1.0, blue: 0.0, alpha: 0.9)  // Green
+        }
     }
 
     private func removeOrganism(_ organism: Organism, animated: Bool = false) {
@@ -792,6 +859,13 @@ class GameScene: SKScene {
         if let senseNode = senseRangeNodes[organism.id] {
             senseNode.removeFromParent()
             senseRangeNodes.removeValue(forKey: organism.id)
+        }
+
+        // Remove energy bar
+        if let energyBar = energyBarNodes[organism.id] {
+            energyBar.background.removeFromParent()
+            energyBar.bar.removeFromParent()
+            energyBarNodes.removeValue(forKey: organism.id)
         }
 
         // Remove all trail segments
