@@ -129,6 +129,8 @@ struct GameView: View {
                 if let organism = viewModel.selectedOrganism {
                     OrganismStatsModal(
                         organism: organism,
+                        species: viewModel.statistics.activeSpecies.first(where: { $0.id == organism.speciesId }),
+                        populationStats: viewModel.statistics,
                         isPresented: Binding(
                             get: { viewModel.selectedOrganism != nil },
                             set: { if !$0 { viewModel.selectedOrganism = nil } }
@@ -174,7 +176,17 @@ struct GameView: View {
 
 struct OrganismStatsModal: View {
     let organism: Organism
+    let species: SpeciesInfo?
+    let populationStats: GameStatistics
     @Binding var isPresented: Bool
+
+    private var agePercentage: Double {
+        return Double(organism.age) / Double(organism.effectiveMaxAge)
+    }
+
+    private var energyPercentage: Double {
+        return organism.energy / 100.0
+    }
 
     var body: some View {
         ZStack {
@@ -186,12 +198,25 @@ struct OrganismStatsModal: View {
                 }
 
             // Modal content
-            VStack(spacing: 16) {
-                // Header
-                HStack {
-                    Text("Organism Stats")
-                        .font(.title2)
-                        .fontWeight(.bold)
+            VStack(spacing: 12) {
+                // Header with species info
+                HStack(spacing: 12) {
+                    // Species color indicator
+                    if let species = species {
+                        Circle()
+                            .fill(Color(red: species.color.red, green: species.color.green, blue: species.color.blue))
+                            .frame(width: 32, height: 32)
+                            .overlay(Circle().stroke(Color.white.opacity(0.5), lineWidth: 2))
+                    }
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(species?.name ?? "Unknown Species")
+                            .font(.title3)
+                            .fontWeight(.bold)
+                        Text("ID: \(String(organism.id.uuidString.prefix(8)))")
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                    }
 
                     Spacer()
 
@@ -206,82 +231,214 @@ struct OrganismStatsModal: View {
 
                 Divider()
 
-                // Scrollable Stats Grid
+                // Scrollable Stats
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 12) {
-                    StatRow(label: "ID", value: String(organism.id.uuidString.prefix(8)))
-                    StatRow(label: "Generation", value: "\(organism.generation)")
-                    StatRow(label: "Age", value: "\(organism.age)/\(organism.maxAge) days")
-                        .foregroundColor(organism.age > organism.maxAge * 3/4 ? .orange : .primary)
+                    VStack(alignment: .leading, spacing: 14) {
+                        // Quick Overview
+                        HStack(spacing: 16) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Generation")
+                                    .font(.caption)
+                                    .foregroundColor(.gray)
+                                Text("\(organism.generation)")
+                                    .font(.title2)
+                                    .fontWeight(.bold)
+                                    .foregroundColor(.cyan)
+                            }
 
-                    Divider()
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Age")
+                                    .font(.caption)
+                                    .foregroundColor(.gray)
+                                HStack(spacing: 4) {
+                                    Text("\(organism.age)")
+                                        .font(.title2)
+                                        .fontWeight(.bold)
+                                        .foregroundColor(agePercentage > 0.75 ? .orange : agePercentage > 0.9 ? .red : .green)
+                                    Text("/ \(organism.effectiveMaxAge)")
+                                        .font(.caption)
+                                        .foregroundColor(.gray)
+                                }
+                            }
 
-                    // Movement
-                    Text("Movement").font(.headline).foregroundColor(.cyan)
-                    StatRow(label: "Speed", value: "\(organism.speed)")
-                    StatRow(label: "Effective Speed", value: String(format: "%.1f", organism.effectiveSpeed))
-                    StatRow(label: "Sense Range", value: "\(organism.senseRange)")
+                            Spacer()
 
-                    Divider()
-
-                    // Energy
-                    Text("Energy").font(.headline).foregroundColor(.yellow)
-                    StatRow(label: "Current Energy", value: String(format: "%.1f/100", organism.energy))
-                        .foregroundColor(organism.energy < 30 ? .red : organism.energy < 60 ? .orange : .green)
-                    StatRow(label: "Energy Efficiency", value: String(format: "%.2fx", organism.energyEfficiency))
-                    StatRow(label: "Metabolism", value: String(format: "%.2fx", organism.metabolism))
-
-                    Divider()
-
-                    // Combat & Survival
-                    Text("Combat").font(.headline).foregroundColor(.red)
-                    StatRow(label: "Aggression", value: String(format: "%.0f%%", organism.aggression * 100))
-                    StatRow(label: "Defense", value: String(format: "%.0f%%", organism.defense * 100))
-
-                    Divider()
-
-                    // Physical
-                    Text("Physical").font(.headline).foregroundColor(.purple)
-                    StatRow(label: "Size", value: String(format: "%.2f", organism.size))
-                    StatRow(label: "Fertility", value: String(format: "%.1f%%", organism.fertility * 100))
-
-                    Divider()
-
-                    // Status
-                    StatRow(label: "Has Food Today", value: organism.hasFoodToday ? "Yes ✓" : "No ✗")
-                        .foregroundColor(organism.hasFoodToday ? .green : .red)
-
-                    if let targetFood = organism.targetFood {
-                        StatRow(label: "Target Food", value: targetFood.isClaimed ? "Claimed" : "Available")
-                    } else {
-                        StatRow(label: "Target Food", value: "None")
-                    }
-
-                    // Visual indicator of organism color
-                    HStack {
-                        Text("Color")
-                            .font(.system(.body, design: .rounded))
-                            .foregroundColor(.gray)
-
-                        Spacer()
-
-                        Circle()
-                            .fill(Color(
-                                red: Double(organism.color.red),
-                                green: Double(organism.color.green),
-                                blue: Double(organism.color.blue)
-                            ))
-                            .frame(width: 24, height: 24)
-                            .overlay(
+                            // Energy circle gauge
+                            ZStack {
                                 Circle()
-                                    .stroke(Color.white.opacity(0.5), lineWidth: 1)
+                                    .stroke(Color.gray.opacity(0.3), lineWidth: 6)
+                                    .frame(width: 60, height: 60)
+
+                                Circle()
+                                    .trim(from: 0, to: energyPercentage)
+                                    .stroke(
+                                        energyPercentage < 0.3 ? Color.red :
+                                        energyPercentage < 0.6 ? Color.orange : Color.green,
+                                        lineWidth: 6
+                                    )
+                                    .frame(width: 60, height: 60)
+                                    .rotationEffect(.degrees(-90))
+
+                                VStack(spacing: 0) {
+                                    Text("\(Int(organism.energy))")
+                                        .font(.caption)
+                                        .fontWeight(.bold)
+                                    Text("energy")
+                                        .font(.system(size: 8))
+                                        .foregroundColor(.gray)
+                                }
+                            }
+                        }
+
+                        Divider()
+
+                        // Status Badges
+                        HStack(spacing: 8) {
+                            StatusBadge(
+                                icon: organism.hasFoodToday ? "checkmark.circle.fill" : "xmark.circle.fill",
+                                label: organism.hasFoodToday ? "Fed" : "Hungry",
+                                color: organism.hasFoodToday ? .green : .red
                             )
+
+                            if organism.energy < 30 {
+                                StatusBadge(icon: "bolt.fill", label: "Low Energy", color: .orange)
+                            }
+
+                            if agePercentage > 0.75 {
+                                StatusBadge(icon: "hourglass.fill", label: "Elderly", color: .orange)
+                            }
+                        }
+
+                        Divider()
+
+                        // Movement Traits
+                        TraitSection(title: "Movement", icon: "figure.run", color: .cyan) {
+                            TraitBar(
+                                label: "Speed",
+                                value: Double(organism.speed),
+                                maxValue: Double(organism.configuration.maxSpeed),
+                                average: populationStats.averageSpeed,
+                                color: .cyan
+                            )
+
+                            HStack {
+                                Text("Effective Speed")
+                                    .font(.caption)
+                                    .foregroundColor(.gray)
+                                Spacer()
+                                Text(String(format: "%.1f", organism.effectiveSpeed))
+                                    .font(.caption)
+                                    .fontWeight(.semibold)
+                                    .foregroundColor(.cyan)
+                            }
+
+                            TraitBar(
+                                label: "Sense Range",
+                                value: Double(organism.senseRange),
+                                maxValue: Double(organism.configuration.maxSenseRange),
+                                average: populationStats.averageSenseRange,
+                                color: .purple
+                            )
+                        }
+
+                        // Combat Traits
+                        TraitSection(title: "Combat", icon: "shield.lefthalf.filled", color: .red) {
+                            TraitBar(
+                                label: "Aggression",
+                                value: organism.aggression,
+                                maxValue: 1.0,
+                                average: populationStats.averageAggression,
+                                color: .red,
+                                isPercentage: true
+                            )
+
+                            TraitBar(
+                                label: "Defense",
+                                value: organism.defense,
+                                maxValue: 1.0,
+                                average: populationStats.averageDefense,
+                                color: .blue,
+                                isPercentage: true
+                            )
+
+                            if organism.configuration.pleiotropyEnabled {
+                                HStack {
+                                    Text("Effective Defense")
+                                        .font(.caption)
+                                        .foregroundColor(.gray)
+                                    Spacer()
+                                    Text(String(format: "%.0f%%", organism.effectiveDefense * 100))
+                                        .font(.caption)
+                                        .fontWeight(.semibold)
+                                        .foregroundColor(.blue)
+                                }
+                            }
+                        }
+
+                        // Physical Traits
+                        TraitSection(title: "Physical", icon: "scalemass", color: .purple) {
+                            TraitBar(
+                                label: "Size",
+                                value: organism.size,
+                                maxValue: organism.configuration.maxSize,
+                                average: populationStats.averageSize,
+                                color: .purple
+                            )
+
+                            TraitBar(
+                                label: "Fertility",
+                                value: organism.fertility,
+                                maxValue: organism.configuration.maxFertility,
+                                average: populationStats.averageFertility,
+                                color: .pink
+                            )
+                        }
+
+                        // Energy & Metabolism
+                        TraitSection(title: "Energy", icon: "bolt.fill", color: .yellow) {
+                            TraitBar(
+                                label: "Energy Efficiency",
+                                value: organism.energyEfficiency,
+                                maxValue: organism.configuration.maxEnergyEfficiency,
+                                average: populationStats.averageEnergyEfficiency,
+                                color: .green
+                            )
+
+                            TraitBar(
+                                label: "Metabolism",
+                                value: organism.metabolism,
+                                maxValue: organism.configuration.maxMetabolism,
+                                average: populationStats.averageMetabolism,
+                                color: .orange
+                            )
+                        }
+
+                        // Environmental Tolerance
+                        TraitSection(title: "Environment", icon: "thermometer.sun.fill", color: .orange) {
+                            TraitBar(
+                                label: "Heat Tolerance",
+                                value: organism.heatTolerance,
+                                maxValue: 1.0,
+                                average: 0.5,
+                                color: .red,
+                                isPercentage: true
+                            )
+
+                            TraitBar(
+                                label: "Cold Tolerance",
+                                value: organism.coldTolerance,
+                                maxValue: 1.0,
+                                average: 0.5,
+                                color: .cyan,
+                                isPercentage: true
+                            )
+                        }
                     }
-                }
+                    .padding(.vertical, 8)
                 }
             }
             .padding()
-            .frame(maxWidth: 380, maxHeight: 600)
+            .frame(maxWidth: 420, maxHeight: 650)
             .background(
                 RoundedRectangle(cornerRadius: 20)
                     .fill(.ultraThinMaterial)
@@ -290,10 +447,145 @@ struct OrganismStatsModal: View {
                 RoundedRectangle(cornerRadius: 20)
                     .stroke(Color.white.opacity(0.2), lineWidth: 1)
             )
-            .padding(.horizontal, 40)
+            .padding(.horizontal, 30)
             .shadow(radius: 20)
         }
         .transition(.opacity.combined(with: .scale(scale: 0.9)))
+    }
+}
+
+// MARK: - Supporting Views
+
+struct TraitSection<Content: View>: View {
+    let title: String
+    let icon: String
+    let color: Color
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .foregroundColor(color)
+                Text(title)
+                    .font(.headline)
+                    .foregroundColor(color)
+            }
+
+            content
+        }
+        .padding(12)
+        .background(Color.black.opacity(0.2))
+        .cornerRadius(10)
+    }
+}
+
+struct TraitBar: View {
+    let label: String
+    let value: Double
+    let maxValue: Double
+    let average: Double
+    let color: Color
+    var isPercentage: Bool = false
+
+    private var normalizedValue: Double {
+        return min(1.0, max(0.0, value / maxValue))
+    }
+
+    private var normalizedAverage: Double {
+        return min(1.0, max(0.0, average / maxValue))
+    }
+
+    private var comparisonIcon: String {
+        if value > average * 1.1 {
+            return "↑"
+        } else if value < average * 0.9 {
+            return "↓"
+        } else {
+            return "≈"
+        }
+    }
+
+    private var comparisonColor: Color {
+        if value > average * 1.1 {
+            return .green
+        } else if value < average * 0.9 {
+            return .red
+        } else {
+            return .gray
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(label)
+                    .font(.caption)
+                    .foregroundColor(.gray)
+
+                Spacer()
+
+                Text(comparisonIcon)
+                    .font(.caption2)
+                    .fontWeight(.bold)
+                    .foregroundColor(comparisonColor)
+
+                if isPercentage {
+                    Text(String(format: "%.0f%%", value * 100))
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundColor(color)
+                } else {
+                    Text(String(format: "%.1f", value))
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundColor(color)
+                }
+            }
+
+            ZStack(alignment: .leading) {
+                // Background
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(Color.gray.opacity(0.2))
+                    .frame(height: 8)
+
+                // Average marker
+                GeometryReader { geometry in
+                    Rectangle()
+                        .fill(Color.white.opacity(0.5))
+                        .frame(width: 2, height: 12)
+                        .offset(x: geometry.size.width * normalizedAverage - 1, y: -2)
+                }
+                .frame(height: 8)
+
+                // Value bar
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(color)
+                    .frame(width: max(4, CGFloat(normalizedValue) * 200), height: 8)
+            }
+            .frame(maxWidth: 200)
+        }
+    }
+}
+
+struct StatusBadge: View {
+    let icon: String
+    let label: String
+    let color: Color
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: icon)
+                .font(.caption2)
+            Text(label)
+                .font(.caption2)
+                .fontWeight(.semibold)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(color.opacity(0.2))
+        .foregroundColor(color)
+        .cornerRadius(6)
     }
 }
 
