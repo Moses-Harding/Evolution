@@ -31,6 +31,9 @@ class GameScene: SKScene {
     private var corpsePositions: [CGPoint] = []  // Store positions of dead organisms
     private let maxCorpsePositions: Int = 100  // Limit corpse tracking for performance
     private var crownNodes: [UUID: SKLabelNode] = [:]  // Crown indicators for elite organisms
+    private var heatmapNodes: [[SKShapeNode]] = []  // 2D grid of heatmap cells
+    private let heatmapGridSize: Int = 20  // 20x20 grid
+    private var heatmapUpdateCounter: Int = 0  // Update heatmap every N frames
 
     // Selection
     private var selectedOrganismId: UUID?
@@ -48,6 +51,7 @@ class GameScene: SKScene {
     private var dayNightProgress: Double = 0.0  // 0.0 = midnight, 0.5 = noon, 1.0 = midnight
     var showSenseRanges: Bool = true  // Toggle for sense range visualization
     var showTrails: Bool = true  // Toggle for movement trails
+    var showHeatmap: Bool = false  // Toggle for population density heatmap
     private let maxTrailLength: Int = 15  // Reduced for performance (was 20)
     private var trailUpdateThreshold: CGFloat = 3.0  // Minimum distance between trail segments
     var showEliteHighlights: Bool = false  // Toggle for elite organism highlighting (disabled by default)
@@ -1205,6 +1209,7 @@ class GameScene: SKScene {
             applyTemperatureEffects()
             updateEnergyBars()
             updateCrowns()
+            updateHeatmap()
         }
 
         // Update selection indicator position
@@ -2091,6 +2096,118 @@ class GameScene: SKScene {
         spawnFood()
         updateStatistics()
         print("DEBUG: Day transitioned to \(currentDay), population: \(organisms.count)")
+    }
+
+    func toggleHeatmap(show: Bool) {
+        showHeatmap = show
+        if show {
+            initializeHeatmap()
+        } else {
+            removeHeatmap()
+        }
+    }
+
+    private func initializeHeatmap() {
+        // Remove existing heatmap if any
+        removeHeatmap()
+
+        // Calculate cell size
+        let width = playableMaxX - playableMinX
+        let height = playableMaxY - playableMinY
+        let cellWidth = width / CGFloat(heatmapGridSize)
+        let cellHeight = height / CGFloat(heatmapGridSize)
+
+        // Create grid of cells
+        for row in 0..<heatmapGridSize {
+            var rowNodes: [SKShapeNode] = []
+            for col in 0..<heatmapGridSize {
+                let x = playableMinX + (CGFloat(col) * cellWidth)
+                let y = playableMinY + (CGFloat(row) * cellHeight)
+
+                let cell = SKShapeNode(rectOf: CGSize(width: cellWidth, height: cellHeight))
+                cell.position = CGPoint(x: x + cellWidth / 2, y: y + cellHeight / 2)
+                cell.fillColor = SKColor.blue.withAlphaComponent(0.0)  // Start transparent
+                cell.strokeColor = .clear
+                cell.zPosition = 1  // Below organisms but above background
+                addChild(cell)
+
+                rowNodes.append(cell)
+            }
+            heatmapNodes.append(rowNodes)
+        }
+    }
+
+    private func removeHeatmap() {
+        for row in heatmapNodes {
+            for cell in row {
+                cell.removeFromParent()
+            }
+        }
+        heatmapNodes.removeAll()
+    }
+
+    private func updateHeatmap() {
+        guard showHeatmap && !heatmapNodes.isEmpty else { return }
+
+        // Only update every 10 frames for performance
+        heatmapUpdateCounter += 1
+        if heatmapUpdateCounter < 10 {
+            return
+        }
+        heatmapUpdateCounter = 0
+
+        // Count organisms in each cell
+        let width = playableMaxX - playableMinX
+        let height = playableMaxY - playableMinY
+        let cellWidth = width / CGFloat(heatmapGridSize)
+        let cellHeight = height / CGFloat(heatmapGridSize)
+
+        // Initialize density grid
+        var density: [[Int]] = Array(repeating: Array(repeating: 0, count: heatmapGridSize), count: heatmapGridSize)
+
+        // Count organisms per cell
+        for organism in organisms {
+            let col = Int((organism.position.x - playableMinX) / cellWidth)
+            let row = Int((organism.position.y - playableMinY) / cellHeight)
+
+            // Bounds check
+            if row >= 0 && row < heatmapGridSize && col >= 0 && col < heatmapGridSize {
+                density[row][col] += 1
+            }
+        }
+
+        // Find max density for normalization
+        let maxDensity = density.flatMap { $0 }.max() ?? 1
+
+        // Update cell colors based on density
+        for row in 0..<heatmapGridSize {
+            for col in 0..<heatmapGridSize {
+                let count = density[row][col]
+                let intensity = CGFloat(count) / CGFloat(maxDensity)
+
+                // Color gradient: blue (low) -> green (medium) -> yellow -> red (high)
+                var color: SKColor
+                if intensity < 0.25 {
+                    // Blue to Cyan
+                    let t = intensity / 0.25
+                    color = SKColor(red: 0.0, green: t * 0.5, blue: 1.0, alpha: 0.3)
+                } else if intensity < 0.5 {
+                    // Cyan to Green
+                    let t = (intensity - 0.25) / 0.25
+                    color = SKColor(red: 0.0, green: 0.5 + t * 0.5, blue: 1.0 - t, alpha: 0.4)
+                } else if intensity < 0.75 {
+                    // Green to Yellow
+                    let t = (intensity - 0.5) / 0.25
+                    color = SKColor(red: t, green: 1.0, blue: 0.0, alpha: 0.5)
+                } else {
+                    // Yellow to Red
+                    let t = (intensity - 0.75) / 0.25
+                    color = SKColor(red: 1.0, green: 1.0 - t, blue: 0.0, alpha: 0.6)
+                }
+
+                heatmapNodes[row][col].fillColor = count > 0 ? color : SKColor.clear
+            }
+        }
     }
 
     // MARK: - Statistics

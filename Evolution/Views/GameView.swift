@@ -612,6 +612,7 @@ struct GameControls: View {
     @ObservedObject var viewModel: GameViewModel
     @Binding var showStats: Bool
     @Binding var showLegend: Bool
+    @State private var showHeatmap: Bool = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -698,6 +699,24 @@ struct GameControls: View {
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
                     .background(Color.teal)
+                    .foregroundColor(.white)
+                    .cornerRadius(8)
+                }
+
+                // Heatmap toggle
+                Button(action: {
+                    showHeatmap.toggle()
+                    viewModel.toggleHeatmap(show: showHeatmap)
+                }) {
+                    HStack(spacing: 6) {
+                        Image(systemName: showHeatmap ? "heat.waves" : "squareshape.split.3x3")
+                        Text("Heat")
+                            .fontWeight(.bold)
+                    }
+                    .font(.system(size: 16))
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(showHeatmap ? Color.red : Color.gray)
                     .foregroundColor(.white)
                     .cornerRadius(8)
                 }
@@ -813,6 +832,10 @@ class GameViewModel: ObservableObject {
 
     func forceNextDay() {
         scene.forceNextDay()
+    }
+
+    func toggleHeatmap(show: Bool) {
+        scene.toggleHeatmap(show: show)
     }
 
     init(configuration: GameConfiguration = .default) {
