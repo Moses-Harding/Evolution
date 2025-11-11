@@ -608,7 +608,7 @@ class GameScene: SKScene {
         switch currentWeather.type {
         case .rain:
             addRainParticles()
-        case .snow:
+        case .coldSnap:
             addSnowParticles()
         default:
             break  // No particles for clear, hot, cold
@@ -1284,11 +1284,8 @@ class GameScene: SKScene {
                 newPosition.y = max(playableMinY, min(playableMaxY, newPosition.y))
 
                 // Check for obstacle collisions and adjust position with sliding
-                var collided = false
                 for obstacle in obstacles {
                     if obstacle.collidesWith(organismPosition: newPosition, organismRadius: CGFloat(organism.effectiveRadius)) {
-                        collided = true
-
                         // Try sliding along the obstacle instead of stopping completely
                         // Try moving only horizontally
                         let horizontalPosition = CGPoint(x: newPosition.x, y: oldPosition.y)
@@ -1744,7 +1741,7 @@ class GameScene: SKScene {
                     y: max(playableMinY, min(playableMaxY, childPosition.y))
                 )
 
-                var child = organism.reproduce(at: clampedPosition)
+                let child = organism.reproduce(at: clampedPosition)
 
                 // Check for speciation - if child diverged enough, it founds a new species
                 if detectSpeciation(parent: organism, child: child) {
@@ -3438,12 +3435,14 @@ class GameScene: SKScene {
         let mutationMultiplier = child.lastMutationMultiplier
 
         // Classify mutation type
-        let (text, color, size, duration) = if mutationMultiplier >= configuration.massiveMutationMultiplierMin {
+        let (text, color, size, duration): (String, SKColor, CGFloat, Double)
+
+        if mutationMultiplier >= configuration.massiveMutationMultiplierMin {
             // Massive spontaneous mutation (very rare)
-            ("💥 MASSIVE MUTATION! 💥", SKColor.magenta, CGFloat(20), 3.0)
+            (text, color, size, duration) = ("💥 MASSIVE MUTATION! 💥", SKColor.magenta, CGFloat(20), 3.0)
         } else if mutationMultiplier >= configuration.largeMutationMultiplierMin {
             // Large spontaneous mutation (rare)
-            ("⚡⚡⚡ LARGE MUTATION ⚡⚡⚡", SKColor.orange, CGFloat(16), 2.0)
+            (text, color, size, duration) = ("⚡⚡⚡ LARGE MUTATION ⚡⚡⚡", SKColor.orange, CGFloat(16), 2.0)
         } else {
             // Normal mutation - use trait difference calculation
             let speedDiff = abs(Double(child.speed - parent.speed))
@@ -3458,16 +3457,17 @@ class GameScene: SKScene {
             let totalMutation = (normalizedSpeedDiff + normalizedSizeDiff + normalizedSenseDiff) / 3.0
 
             // Only show indicator if mutation is significant
-            if totalMutation > 0.3 {
-                if totalMutation > 0.8 {
-                    ("⚡⚡⚡", SKColor.magenta, CGFloat(16), 1.2)  // Major mutation
-                } else if totalMutation > 0.5 {
-                    ("⚡⚡", SKColor.orange, CGFloat(14), 1.0)  // Moderate mutation
-                } else {
-                    ("⚡", SKColor.yellow, CGFloat(12), 0.8)  // Minor mutation
-                }
-            } else {
+            if totalMutation <= 0.3 {
                 return  // No significant mutation to display
+            }
+
+            // Determine mutation level
+            if totalMutation > 0.8 {
+                (text, color, size, duration) = ("⚡⚡⚡", SKColor.magenta, CGFloat(16), 1.2)  // Major mutation
+            } else if totalMutation > 0.5 {
+                (text, color, size, duration) = ("⚡⚡", SKColor.orange, CGFloat(14), 1.0)  // Moderate mutation
+            } else {
+                (text, color, size, duration) = ("⚡", SKColor.yellow, CGFloat(12), 0.8)  // Minor mutation
             }
         }
 
@@ -4072,8 +4072,7 @@ class GameScene: SKScene {
     }
 
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
-        guard let touch = touches.first else { return }
-        let location = touch.location(in: self)
+        guard touches.first != nil else { return }
 
         // Remove preview
         dragPreview?.removeFromParent()

@@ -97,7 +97,7 @@ enum DesignSystem {
         static let lg = Shadow.custom(radius: 16, opacity: 0.2)
         static let xl = Shadow.custom(radius: 24, opacity: 0.25)
 
-        static func custom(radius: CGFloat, opacity: Double) -> ViewModifier {
+        static func custom(radius: CGFloat, opacity: Double) -> any ViewModifier {
             return ShadowModifier(radius: radius, opacity: opacity)
         }
     }
