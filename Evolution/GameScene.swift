@@ -1295,16 +1295,23 @@ class GameScene: SKScene {
         }
 
         // Visual feedback for contest
-        if winner.id != organism.id && contestants.contains(where: { $0.id == organism.id }) {
-            // This organism lost the contest - show red flash
-            if let node = organismNodes[organism.id] {
-                let originalColor = node.fillColor
-                node.fillColor = SKColor.red
-                let resetColor = SKAction.run {
-                    node.fillColor = originalColor
+        if contestants.count > 1 {
+            // There was an actual contest
+            if winner.id == organism.id {
+                // This organism won the contest!
+                showFloatingLabel(text: "WIN!", at: winner.position, color: .green, fontSize: 12, offsetY: 20)
+            } else if contestants.contains(where: { $0.id == organism.id }) {
+                // This organism lost the contest - show red flash
+                showFloatingLabel(text: "LOST", at: organism.position, color: .red, fontSize: 10, offsetY: 15)
+                if let node = organismNodes[organism.id] {
+                    let originalColor = node.fillColor
+                    node.fillColor = SKColor.red
+                    let resetColor = SKAction.run {
+                        node.fillColor = originalColor
+                    }
+                    let wait = SKAction.wait(forDuration: 0.2)
+                    node.run(SKAction.sequence([wait, resetColor]))
                 }
-                let wait = SKAction.wait(forDuration: 0.2)
-                node.run(SKAction.sequence([wait, resetColor]))
             }
         }
 
@@ -1360,6 +1367,9 @@ class GameScene: SKScene {
                         // Restore energy from eating
                         organism.gainEnergy(configuration.energyGainFromFood)
 
+                        // Show floating eat label
+                        showFloatingLabel(text: "NOM", at: organism.position, color: .yellow, fontSize: 14, offsetY: 25)
+
                         // Update visual feedback with animation
                         if let foodNode = foodNodes[target.id] {
                         // Animate food being consumed
@@ -1398,6 +1408,8 @@ class GameScene: SKScene {
                     organismsToRemove.append(organism)
                     // Track hazard death
                     statistics.deathsByHazard += 1
+                    // Show hazard death label
+                    showFloatingLabel(text: "HAZARD!", at: organism.position, color: SKColor(red: 1.0, green: 0.2, blue: 0.2, alpha: 1.0), fontSize: 14, offsetY: 30)
                     // Add death effect at hazard
                     addDeathParticles(at: organism.position, color: organism.color)
                     break
@@ -1451,6 +1463,8 @@ class GameScene: SKScene {
                     // Child becomes founder of new species
                     child.speciesId = child.id
                     registerSpecies(for: child, foundedOnDay: currentDay)
+                    // Show speciation event label
+                    showFloatingLabel(text: "NEW SPECIES!", at: clampedPosition, color: .magenta, fontSize: 16, offsetY: 50)
                 } else {
                     // Child inherits parent's species
                     registerSpecies(for: child, foundedOnDay: currentDay)
@@ -1458,6 +1472,9 @@ class GameScene: SKScene {
 
                 // Show dramatic reproduction with buildup -> POP -> split
                 showDramaticReproduction(parent: organism, child: child, childPosition: clampedPosition)
+
+                // Show floating birth label
+                showFloatingLabel(text: "BIRTH!", at: clampedPosition, color: .cyan, fontSize: 16, offsetY: 40)
 
                 births += 1
             }
@@ -1476,14 +1493,17 @@ class GameScene: SKScene {
                 if organism.isStarving {
                     // Low energy death
                     statistics.deathsByLowEnergy += 1
+                    showFloatingLabel(text: "EXHAUSTED", at: organism.position, color: .orange, fontSize: 12)
                     removeOrganism(organism, animated: true)
                 } else if organism.age >= organism.maxAge {
                     // Old age death
                     statistics.deathsByOldAge += 1
+                    showFloatingLabel(text: "OLD AGE", at: organism.position, color: .gray, fontSize: 12)
                     removeOrganism(organism, animated: true)
                 } else {
                     // Starvation (didn't eat)
                     statistics.deathsByStarvation += 1
+                    showFloatingLabel(text: "STARVED", at: organism.position, color: .red, fontSize: 12)
                     removeOrganism(organism, animated: true)
                 }
                 return false
@@ -2437,6 +2457,30 @@ class GameScene: SKScene {
 
         // Energy particles traveling from parent to child
         addEnergyParticles(from: parentPosition, to: childPosition)
+    }
+
+    // MARK: - Floating Text Labels
+    private func showFloatingLabel(text: String, at position: CGPoint, color: SKColor = .white, fontSize: CGFloat = 14, offsetY: CGFloat = 30) {
+        let label = SKLabelNode(text: text)
+        label.fontName = "Courier-Bold"
+        label.fontSize = fontSize
+        label.fontColor = color
+        label.position = position
+        label.zPosition = 100
+        label.alpha = 0
+
+        addChild(label)
+
+        // Animate upward with fade
+        let fadeIn = SKAction.fadeIn(withDuration: 0.15)
+        let moveUp = SKAction.moveBy(x: 0, y: offsetY, duration: 0.8)
+        moveUp.timingMode = .easeOut
+        let fadeOut = SKAction.fadeOut(withDuration: 0.3)
+        let wait = SKAction.wait(forDuration: 0.5)
+        let remove = SKAction.removeFromParent()
+
+        let sequence = SKAction.sequence([fadeIn, SKAction.group([moveUp, SKAction.sequence([wait, fadeOut])]), remove])
+        label.run(sequence)
     }
 
     // MARK: - Particle Effects
