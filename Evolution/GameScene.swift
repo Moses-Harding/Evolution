@@ -80,11 +80,13 @@ class GameScene: SKScene {
     var statistics: GameStatistics = GameStatistics()
     var evolutionaryRecords: EvolutionaryRecords = EvolutionaryRecords()
     var lineageTracker: LineageTracker = LineageTracker()
+    var correlationAnalyzer: TraitCorrelationAnalyzer = TraitCorrelationAnalyzer()
 
     // MARK: - Publishers
     let statisticsPublisher = PassthroughSubject<GameStatistics, Never>()
     let selectedOrganismPublisher = PassthroughSubject<Organism?, Never>()
     let milestonePublisher = PassthroughSubject<EvolutionaryMilestone, Never>()
+    let correlationPublisher = PassthroughSubject<TraitCorrelation, Never>()
 
     // MARK: - Initialization
     init(size: CGSize, configuration: GameConfiguration) {
@@ -1847,6 +1849,18 @@ class GameScene: SKScene {
         // Update lineage dominance scores
         lineageTracker.updateDominanceScores(totalPopulation: statistics.population, currentDay: currentDay)
 
+        // Analyze trait correlations periodically (every 10 days for performance)
+        if currentDay % 10 == 0 && organisms.count >= 20 {
+            let newCorrelations = correlationAnalyzer.analyzePopulation(organisms, currentDay: currentDay)
+            for correlation in newCorrelations {
+                correlationPublisher.send(correlation)
+                // Show notification for strong correlations
+                if correlation.strength == .veryStrong || correlation.strength == .strong {
+                    showCorrelationNotification(correlation: correlation)
+                }
+            }
+        }
+
         // Check for mass extinction event
         if deaths > 0 {
             if let milestone = evolutionaryRecords.recordMassExtinction(
@@ -3332,6 +3346,61 @@ class GameScene: SKScene {
 
             sparkle.run(SKAction.sequence([SKAction.group([move, fade]), remove]))
         }
+    }
+
+    /// Shows notification when a significant trait correlation is discovered
+    private func showCorrelationNotification(correlation: TraitCorrelation) {
+        let isPositive = correlation.isPositive
+        let color = isPositive ? SKColor.green : SKColor.orange
+        let arrow = isPositive ? "↑↑" : "↑↓"
+
+        // Create notification banner
+        let bannerHeight: CGFloat = 60
+        let banner = SKShapeNode(rectOf: CGSize(width: size.width * 0.7, height: bannerHeight), cornerRadius: 10)
+        banner.fillColor = color.withAlphaComponent(0.85)
+        banner.strokeColor = .white
+        banner.lineWidth = 2
+        banner.position = CGPoint(x: size.width / 2, y: size.height + bannerHeight)
+        banner.zPosition = 1100
+
+        // Add icon
+        let iconLabel = SKLabelNode(text: correlation.strength.icon)
+        iconLabel.fontSize = 24
+        iconLabel.verticalAlignmentMode = .center
+        iconLabel.position = CGPoint(x: -size.width * 0.28, y: 0)
+        banner.addChild(iconLabel)
+
+        // Add title
+        let titleLabel = SKLabelNode(text: "TRAIT CORRELATION")
+        titleLabel.fontName = "Helvetica-Bold"
+        titleLabel.fontSize = 14
+        titleLabel.fontColor = .white
+        titleLabel.verticalAlignmentMode = .center
+        titleLabel.horizontalAlignmentMode = .left
+        titleLabel.position = CGPoint(x: -size.width * 0.23, y: 10)
+        banner.addChild(titleLabel)
+
+        // Add description
+        let descLabel = SKLabelNode(text: "\(correlation.trait1.rawValue) \(arrow) \(correlation.trait2.rawValue)")
+        descLabel.fontName = "Helvetica"
+        descLabel.fontSize = 16
+        descLabel.fontColor = .white
+        descLabel.verticalAlignmentMode = .center
+        descLabel.horizontalAlignmentMode = .left
+        descLabel.position = CGPoint(x: -size.width * 0.23, y: -10)
+        banner.addChild(descLabel)
+
+        addChild(banner)
+
+        // Animate
+        let slideDown = SKAction.moveTo(y: size.height * 0.90, duration: 0.4)
+        slideDown.timingMode = .easeOut
+        let wait = SKAction.wait(forDuration: 2.5)
+        let slideUp = SKAction.moveTo(y: size.height + bannerHeight, duration: 0.4)
+        slideUp.timingMode = .easeIn
+        let remove = SKAction.removeFromParent()
+
+        banner.run(SKAction.sequence([slideDown, wait, slideUp, remove]))
     }
 
     // MARK: - Corpse Markers
