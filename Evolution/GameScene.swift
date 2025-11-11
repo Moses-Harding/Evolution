@@ -2424,28 +2424,59 @@ class GameScene: SKScene {
 
     // MARK: - Particle Effects
     private func addBirthParticles(at position: CGPoint, color: (red: Double, green: Double, blue: Double)) {
-        for _ in 0..<12 {
-            let particle = SKShapeNode(circleOfRadius: 3)
+        // Main burst - larger particles
+        for _ in 0..<20 {
+            let particle = SKShapeNode(circleOfRadius: CGFloat.random(in: 2...5))
             particle.fillColor = SKColor(red: CGFloat(color.red), green: CGFloat(color.green), blue: CGFloat(color.blue), alpha: 1.0)
-            particle.strokeColor = .clear
+            particle.strokeColor = .white
+            particle.lineWidth = 1
+            particle.glowWidth = 3
             particle.position = position
-            particle.zPosition = 10
+            particle.zPosition = 15
 
             addChild(particle)
 
-            // Random direction
+            // Explosive outward motion
             let angle = CGFloat.random(in: 0...(2 * .pi))
-            let distance = CGFloat.random(in: 30...60)
+            let distance = CGFloat.random(in: 40...80)
             let endX = position.x + cos(angle) * distance
             let endY = position.y + sin(angle) * distance
 
-            let move = SKAction.move(to: CGPoint(x: endX, y: endY), duration: 0.6)
-            let fadeOut = SKAction.fadeOut(withDuration: 0.6)
-            let shrink = SKAction.scale(to: 0.1, duration: 0.6)
-            let group = SKAction.group([move, fadeOut, shrink])
+            let move = SKAction.move(to: CGPoint(x: endX, y: endY), duration: 0.7)
+            move.timingMode = .easeOut
+            let fadeOut = SKAction.fadeOut(withDuration: 0.7)
+            let shrink = SKAction.scale(to: 0.1, duration: 0.7)
+            let rotate = SKAction.rotate(byAngle: .pi * 2, duration: 0.7)
+            let group = SKAction.group([move, fadeOut, shrink, rotate])
             let remove = SKAction.removeFromParent()
 
             particle.run(SKAction.sequence([group, remove]))
+        }
+
+        // Secondary sparkles - smaller, faster particles
+        for _ in 0..<30 {
+            let sparkle = SKShapeNode(circleOfRadius: 1.5)
+            sparkle.fillColor = .white
+            sparkle.strokeColor = .clear
+            sparkle.glowWidth = 5
+            sparkle.position = position
+            sparkle.zPosition = 16
+
+            addChild(sparkle)
+
+            let angle = CGFloat.random(in: 0...(2 * .pi))
+            let distance = CGFloat.random(in: 20...50)
+            let endX = position.x + cos(angle) * distance
+            let endY = position.y + sin(angle) * distance
+
+            let delay = SKAction.wait(forDuration: Double.random(in: 0...0.2))
+            let move = SKAction.move(to: CGPoint(x: endX, y: endY), duration: 0.5)
+            let fadeOut = SKAction.fadeOut(withDuration: 0.5)
+            let shrink = SKAction.scale(to: 0.05, duration: 0.5)
+            let group = SKAction.group([move, fadeOut, shrink])
+            let remove = SKAction.removeFromParent()
+
+            sparkle.run(SKAction.sequence([delay, group, remove]))
         }
     }
 
@@ -2470,30 +2501,54 @@ class GameScene: SKScene {
     }
 
     private func addDeathParticles(at position: CGPoint, color: (red: Double, green: Double, blue: Double)) {
-        for _ in 0..<20 {
-            let particle = SKShapeNode(circleOfRadius: 2)
-            particle.fillColor = SKColor(red: CGFloat(color.red), green: CGFloat(color.green), blue: CGFloat(color.blue), alpha: 1.0)
-            particle.strokeColor = .clear
+        // Main death burst - organism breaking apart
+        for _ in 0..<30 {
+            let particle = SKShapeNode(circleOfRadius: CGFloat.random(in: 1.5...4))
+            particle.fillColor = SKColor(red: CGFloat(color.red * 0.7), green: CGFloat(color.green * 0.7), blue: CGFloat(color.blue * 0.7), alpha: 1.0)
+            particle.strokeColor = SKColor(red: CGFloat(color.red), green: CGFloat(color.green), blue: CGFloat(color.blue), alpha: 0.8)
+            particle.lineWidth = 1
             particle.position = position
             particle.zPosition = 10
 
             addChild(particle)
 
-            // Explosive outward motion
+            // Explosive outward motion with gravity
             let angle = CGFloat.random(in: 0...(2 * .pi))
-            let distance = CGFloat.random(in: 40...80)
+            let distance = CGFloat.random(in: 50...100)
             let endX = position.x + cos(angle) * distance
-            let endY = position.y + sin(angle) * distance
+            let endY = position.y + sin(angle) * distance - 30  // Gravity pull down
 
             // Fast then slow
-            let move = SKAction.move(to: CGPoint(x: endX, y: endY), duration: 0.8)
+            let move = SKAction.move(to: CGPoint(x: endX, y: endY), duration: 1.0)
             move.timingMode = .easeOut
-            let fadeOut = SKAction.fadeOut(withDuration: 0.8)
-            let spin = SKAction.rotate(byAngle: .pi * CGFloat.random(in: 2...4), duration: 0.8)
-            let group = SKAction.group([move, fadeOut, spin])
+            let fadeOut = SKAction.fadeOut(withDuration: 1.0)
+            let spin = SKAction.rotate(byAngle: .pi * CGFloat.random(in: 3...6), duration: 1.0)
+            let shrink = SKAction.scale(to: 0.2, duration: 1.0)
+            let group = SKAction.group([move, fadeOut, spin, shrink])
             let remove = SKAction.removeFromParent()
 
             particle.run(SKAction.sequence([group, remove]))
+        }
+
+        // Smoke/dust particles rising
+        for _ in 0..<15 {
+            let smoke = SKShapeNode(circleOfRadius: CGFloat.random(in: 3...6))
+            smoke.fillColor = SKColor(white: 0.5, alpha: 0.4)
+            smoke.strokeColor = .clear
+            smoke.position = position
+            smoke.zPosition = 9
+
+            addChild(smoke)
+
+            let delay = SKAction.wait(forDuration: Double.random(in: 0...0.3))
+            let riseUp = SKAction.moveBy(x: CGFloat.random(in: -20...20), y: CGFloat.random(in: 40...80), duration: 1.5)
+            riseUp.timingMode = .easeOut
+            let fadeOut = SKAction.fadeOut(withDuration: 1.5)
+            let expand = SKAction.scale(to: 2.0, duration: 1.5)
+            let group = SKAction.group([riseUp, fadeOut, expand])
+            let remove = SKAction.removeFromParent()
+
+            smoke.run(SKAction.sequence([delay, group, remove]))
         }
     }
 
