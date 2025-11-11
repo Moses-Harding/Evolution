@@ -12,31 +12,32 @@ This document contains ideas for additional evolutionary traits that could make 
 - **Visualization**: Color gradient (blue=slow, red=fast)
 
 ### Sense Range / Vision Range
-- **Status**: 🚧 In Progress
+- **Status**: ✅ Implemented
 - **What it does**: How far an organism can "see" to detect food
 - **Why it's interesting**: Creates natural tradeoff with speed
   - Fast + short vision = might zoom past food without seeing it
   - Slow + long vision = can target food from far away but takes time to reach
   - Forces evolution to balance perception vs. action
-- **Visualization**: Faint circle around organisms showing detection radius (optional)
+- **Visualization**: Faint semi-transparent circles showing detection radius
 - **Implementation complexity**: Medium
 - **Gameplay impact**: High - completely changes optimal strategies
 
+### Size
+- **Status**: ✅ Implemented
+- **What it does**: Physical size affecting collision radius and movement speed
+- **Range**: 0.5-2.0 (configurable)
+- **Mutation**: ±0.15 per generation
+- **Tradeoffs**:
+  - Larger = easier to collect food (bigger collision radius) but slower movement (50% penalty at max)
+  - Smaller = faster movement but harder to catch food
+  - Visual size scales with trait value
+- **Visualization**: Organism radius scales with size
+- **Implementation complexity**: Medium
+- **Gameplay impact**: High - Creates size-speed tradeoff
+
 ## Proposed Traits
 
-### 1. Size
-- **Status**: 💡 Idea
-- **What it does**: Physical size affecting collision radius and potentially movement
-- **Tradeoffs**:
-  - Larger = easier to collect food (bigger collision radius) but slower movement
-  - Smaller = faster movement but harder to catch food
-  - Could affect reproduction (larger organisms produce more/larger offspring)
-  - Could affect energy consumption
-- **Visualization**: Already easy - vary the organism radius based on size trait
-- **Implementation complexity**: Low-Medium
-- **Gameplay impact**: Medium-High
-
-### 2. Energy Efficiency
+### 1. Energy Efficiency
 - **Status**: 💡 Idea
 - **What it does**: How much "energy" organisms use while moving
 - **Tradeoffs**:
@@ -129,17 +130,19 @@ Some traits work particularly well together:
 ### Phase 1 (MVP+): ✅ Complete
 - Speed
 
-### Phase 2 (Current): 🚧
-- Sense Range (in progress)
+### Phase 2: ✅ Complete
+- Sense Range
+- Size
+- Visual sense range indicators
 
-### Phase 3 (Next):
-- Size (easy win, good visual impact)
-- Energy Efficiency (pairs with size)
+### Phase 3 (Current): 🎯 Next Up
+- Energy Efficiency (adds survival complexity, pairs well with size)
+- Reproduction Rate / Fertility (easy addition, creates r/K selection dynamics)
 
 ### Phase 4 (Advanced):
 - Memory/Intelligence
 - Lifespan
-- Reproduction Rate
+- Multi-trait color visualization
 
 ### Phase 5 (Complex Systems):
 - Social Behavior
