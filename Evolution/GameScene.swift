@@ -34,6 +34,7 @@ class GameScene: SKScene {
     private var heatmapNodes: [[SKShapeNode]] = []  // 2D grid of heatmap cells
     private let heatmapGridSize: Int = 20  // 20x20 grid
     private var heatmapUpdateCounter: Int = 0  // Update heatmap every N frames
+    private var achievedPopulationMilestones: Set<Int> = []  // Track which population milestones have been achieved
 
     // Selection
     private var selectedOrganismId: UUID?
@@ -2349,6 +2350,156 @@ class GameScene: SKScene {
         statisticsPublisher.send(statistics)
     }
 
+    private func checkPopulationAchievements() {
+        let population = organisms.count
+        let milestones = [10, 25, 50, 75, 100, 150, 200, 300, 500, 1000]
+
+        for milestone in milestones {
+            if population >= milestone && !achievedPopulationMilestones.contains(milestone) {
+                achievedPopulationMilestones.insert(milestone)
+                showPopulationAchievement(milestone: milestone)
+            }
+        }
+    }
+
+    private func showPopulationAchievement(milestone: Int) {
+        let centerX = (playableMinX + playableMaxX) / 2
+        let centerY = (playableMinY + playableMaxY) / 2
+
+        // Determine achievement tier and visual style
+        let (emoji, color, message): (String, SKColor, String) = {
+            switch milestone {
+            case 10:
+                return ("🎉", SKColor.green, "FIRST COMMUNITY!")
+            case 25:
+                return ("🌱", SKColor(red: 0.3, green: 0.8, blue: 0.3, alpha: 1.0), "GROWING STRONG!")
+            case 50:
+                return ("🌿", SKColor(red: 0.2, green: 0.9, blue: 0.4, alpha: 1.0), "THRIVING ECOSYSTEM!")
+            case 100:
+                return ("🌳", SKColor(red: 0.0, green: 1.0, blue: 0.5, alpha: 1.0), "POPULATION BOOM!")
+            case 200:
+                return ("🏙️", SKColor.cyan, "MEGA COLONY!")
+            case 500:
+                return ("🌍", SKColor(red: 0.2, green: 0.6, blue: 1.0, alpha: 1.0), "WORLD DOMINATION!")
+            case 1000:
+                return ("👑", SKColor(red: 1.0, green: 0.8, blue: 0.0, alpha: 1.0), "LEGENDARY EMPIRE!")
+            default:
+                return ("⭐", SKColor.yellow, "MILESTONE ACHIEVED!")
+            }
+        }()
+
+        // Large center announcement
+        let mainLabel = SKLabelNode(text: "\(emoji) \(milestone) ORGANISMS! \(emoji)")
+        mainLabel.fontName = "Courier-Bold"
+        mainLabel.fontSize = 32
+        mainLabel.fontColor = color
+        mainLabel.position = CGPoint(x: centerX, y: centerY + 20)
+        mainLabel.zPosition = 200
+        mainLabel.alpha = 0
+        addChild(mainLabel)
+
+        let subLabel = SKLabelNode(text: message)
+        subLabel.fontName = "Courier-Bold"
+        subLabel.fontSize = 18
+        subLabel.fontColor = .white
+        subLabel.position = CGPoint(x: centerX, y: centerY - 20)
+        subLabel.zPosition = 200
+        subLabel.alpha = 0
+        addChild(subLabel)
+
+        // Animated entrance
+        let fadeIn = SKAction.fadeIn(withDuration: 0.3)
+        let scaleUp = SKAction.scale(to: 1.2, duration: 0.3)
+        scaleUp.timingMode = .easeOut
+        let scaleDown = SKAction.scale(to: 1.0, duration: 0.2)
+        let wait = SKAction.wait(forDuration: 2.0)
+        let fadeOut = SKAction.fadeOut(withDuration: 0.5)
+        let remove = SKAction.removeFromParent()
+
+        let mainSequence = SKAction.sequence([
+            SKAction.group([fadeIn, scaleUp]),
+            scaleDown,
+            wait,
+            fadeOut,
+            remove
+        ])
+
+        mainLabel.run(mainSequence)
+        subLabel.run(SKAction.sequence([fadeIn, wait, fadeOut, remove]))
+
+        // Fireworks effect around the screen
+        addFireworksEffect(at: CGPoint(x: centerX, y: centerY), color: color)
+
+        // Flash effect
+        let flash = SKShapeNode(rectOf: CGSize(width: playableMaxX - playableMinX, height: playableMaxY - playableMinY))
+        flash.position = CGPoint(x: centerX, y: centerY)
+        flash.fillColor = color
+        flash.strokeColor = .clear
+        flash.alpha = 0
+        flash.zPosition = 199
+        addChild(flash)
+
+        let flashIn = SKAction.fadeAlpha(to: 0.3, duration: 0.1)
+        let flashOut = SKAction.fadeOut(withDuration: 0.3)
+        flash.run(SKAction.sequence([flashIn, flashOut, remove]))
+    }
+
+    private func addFireworksEffect(at position: CGPoint, color: SKColor) {
+        let positions = [
+            CGPoint(x: playableMinX + 50, y: playableMaxY - 50),
+            CGPoint(x: playableMaxX - 50, y: playableMaxY - 50),
+            CGPoint(x: playableMinX + 50, y: playableMinY + 50),
+            CGPoint(x: playableMaxX - 50, y: playableMinY + 50),
+            position
+        ]
+
+        for (index, pos) in positions.enumerated() {
+            let delay = Double(index) * 0.15
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                guard let self = self else { return }
+
+                // Create burst of particles
+                for _ in 0..<12 {
+                    let angle = CGFloat.random(in: 0...(2 * .pi))
+                    let distance = CGFloat.random(in: 30...60)
+                    let dx = cos(angle) * distance
+                    let dy = sin(angle) * distance
+
+                    let particle = SKShapeNode(circleOfRadius: 3)
+                    particle.fillColor = color
+                    particle.strokeColor = .clear
+                    particle.position = pos
+                    particle.zPosition = 150
+                    self.addChild(particle)
+
+                    let move = SKAction.moveBy(x: dx, y: dy, duration: 0.8)
+                    move.timingMode = .easeOut
+                    let fadeOut = SKAction.fadeOut(withDuration: 0.6)
+                    let remove = SKAction.removeFromParent()
+
+                    particle.run(SKAction.sequence([SKAction.group([move, fadeOut]), remove]))
+                }
+
+                // Add a star burst at the center
+                let star = SKLabelNode(text: "✨")
+                star.fontSize = 24
+                star.position = pos
+                star.zPosition = 151
+                star.alpha = 0
+                self.addChild(star)
+
+                let starFadeIn = SKAction.fadeIn(withDuration: 0.1)
+                let starRotate = SKAction.rotate(byAngle: .pi * 2, duration: 0.6)
+                let starScale = SKAction.scale(to: 2.0, duration: 0.6)
+                let starFadeOut = SKAction.fadeOut(withDuration: 0.3)
+                let starRemove = SKAction.removeFromParent()
+
+                star.run(SKAction.sequence([starFadeIn, SKAction.group([starRotate, starScale, starFadeOut]), starRemove]))
+            }
+        }
+    }
+
     private func updateMilestones() {
         // Check fastest speed
         if let fastest = organisms.max(by: { $0.speed < $1.speed }) {
@@ -2427,15 +2578,10 @@ class GameScene: SKScene {
                 achievedOnDay: currentDay,
                 generation: 0
             )
-            // Show center screen notification for population milestone
-            showFloatingLabel(
-                text: "🏆 POPULATION: \(organisms.count)!",
-                at: CGPoint(x: (playableMinX + playableMaxX) / 2, y: (playableMinY + playableMaxY) / 2),
-                color: .green,
-                fontSize: 24,
-                offsetY: 0
-            )
         }
+
+        // Check for population achievement milestones
+        checkPopulationAchievements()
 
         // Check most aggressive
         if let mostAggressive = organisms.max(by: { $0.aggression < $1.aggression }) {
