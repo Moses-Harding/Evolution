@@ -1043,6 +1043,7 @@ class GameScene: SKScene {
             updateSeason()  // Check for season change
             updateWeather()  // Check for weather change
             showDayTransition()
+            checkFoodScarcity()  // Warn if food supply is insufficient
             spawnFood()
             resetOrganismsForNewDay()
         } else {
@@ -2504,6 +2505,90 @@ class GameScene: SKScene {
 
         // Energy particles traveling from parent to child
         addEnergyParticles(from: parentPosition, to: childPosition)
+    }
+
+    // MARK: - Food Scarcity Warning
+    private func checkFoodScarcity() {
+        let foodPerOrganism = Double(configuration.foodPerDay) / Double(max(1, statistics.population))
+
+        // Critical scarcity: less than 0.3 food per organism
+        if foodPerOrganism < 0.3 {
+            showScarcityWarning(level: .critical)
+        }
+        // High scarcity: less than 0.5 food per organism
+        else if foodPerOrganism < 0.5 {
+            showScarcityWarning(level: .high)
+        }
+        // Moderate scarcity: less than 0.7 food per organism
+        else if foodPerOrganism < 0.7 {
+            showScarcityWarning(level: .moderate)
+        }
+    }
+
+    private enum ScarcityLevel {
+        case moderate, high, critical
+    }
+
+    private func showScarcityWarning(level: ScarcityLevel) {
+        let (text, color, emoji) = switch level {
+        case .moderate:
+            ("FOOD SCARCE", SKColor.yellow, "⚠️")
+        case .high:
+            ("FOOD SHORTAGE", SKColor.orange, "🔴")
+        case .critical:
+            ("STARVATION!", SKColor.red, "💀")
+        }
+
+        // Create warning banner
+        let banner = SKNode()
+        banner.zPosition = 950
+
+        let centerX = (playableMinX + playableMaxX) / 2
+        let centerY = (playableMinY + playableMaxY) / 2
+
+        // Background
+        let bg = SKShapeNode(rectOf: CGSize(width: 250, height: 60), cornerRadius: 8)
+        bg.fillColor = SKColor.black.withAlphaComponent(0.8)
+        bg.strokeColor = color
+        bg.lineWidth = 3
+        bg.glowWidth = 8
+        banner.addChild(bg)
+
+        // Emoji
+        let emojiLabel = SKLabelNode(text: emoji)
+        emojiLabel.fontSize = 24
+        emojiLabel.position = CGPoint(x: -80, y: -6)
+        banner.addChild(emojiLabel)
+
+        // Warning text
+        let warningLabel = SKLabelNode(text: text)
+        warningLabel.fontName = "Courier-Bold"
+        warningLabel.fontSize = 18
+        warningLabel.fontColor = color
+        warningLabel.position = CGPoint(x: 10, y: -6)
+        warningLabel.horizontalAlignmentMode = .center
+        banner.addChild(warningLabel)
+
+        banner.position = CGPoint(x: centerX, y: centerY - 150)
+        banner.alpha = 0
+
+        addChild(banner)
+
+        // Pulse animation
+        let fadeIn = SKAction.fadeIn(withDuration: 0.3)
+        let wait = SKAction.wait(forDuration: 2.0)
+        let pulse1 = SKAction.sequence([
+            SKAction.scale(to: 1.1, duration: 0.2),
+            SKAction.scale(to: 1.0, duration: 0.2)
+        ])
+        let pulse2 = SKAction.sequence([
+            SKAction.wait(forDuration: 0.5),
+            pulse1
+        ])
+        let fadeOut = SKAction.fadeOut(withDuration: 0.4)
+        let remove = SKAction.removeFromParent()
+
+        banner.run(SKAction.sequence([fadeIn, SKAction.group([wait, pulse2]), fadeOut, remove]))
     }
 
     // MARK: - Floating Text Labels
