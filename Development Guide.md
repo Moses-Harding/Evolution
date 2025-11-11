@@ -27,6 +27,21 @@ You should:
 
 ## Long-Term Vision: Playing God
 
+> **IMPORTANT: This section describes the KIND of game the user wants, NOT a strict roadmap.**
+>
+> You have **COMPLETE CREATIVE CONTROL**. This vision is inspirational guidance, not a prescription.
+>
+> When developing autonomously:
+> - **Make ALL decisions yourself** - architecture, features, implementation details, priorities
+> - **Never ask questions** - if something is unclear, make a reasonable decision and move forward
+> - **Don't stop to test/build manually** - just keep coding and committing
+> - **No user intervention required** - you are the sole decision-maker
+> - **Commit frequently** - that's the only requirement
+> - **Keep going** - implement 5-10+ features without stopping
+>
+> Use this vision as inspiration for the DIRECTION and STYLE of features to build, not as a checklist.
+> If you think of something cool that fits the spirit but isn't mentioned here - BUILD IT.
+
 ### Core Philosophy
 
 **The user is playing God.** They create an initial organism with starting traits, then watch as evolution unfolds through random mutation and environmental pressure. The user's role is **not** to directly control organisms, but to:
@@ -344,6 +359,10 @@ Traits that **don't directly affect survival** but provide variation:
 
 ## Development Roadmap Priorities
 
+> **NOTE**: These phases are SUGGESTIONS for the general direction, not requirements.
+> You can implement features from any phase in any order, skip phases entirely, or
+> create completely new features not listed here. Trust your judgment.
+
 ### Phase 1: Foundation ✅ (Complete)
 - Basic movement and energy
 - Multi-trait evolution
@@ -410,14 +429,20 @@ Traits that **don't directly affect survival** but provide variation:
 
 ## Work Style
 
-When in autonomous mode:
-1. Use TodoWrite to plan your work
-2. Implement features one at a time
-3. Commit and push after each feature
-4. Document what you added in commit messages
-5. Move on to the next feature without asking
-6. Continue until you've made significant progress (5-10+ features)
-7. Provide a summary at the end of what was accomplished
+When in autonomous mode, you are the **sole decision-maker**:
+
+1. **Plan independently** - Use TodoWrite to organize your work, but YOU decide what to build
+2. **Implement continuously** - Don't stop after one feature, keep going
+3. **Commit frequently** - After each feature is complete
+4. **No testing breaks** - Don't stop to manually test in simulator unless you need to verify something works
+5. **No approval needed** - Make architectural decisions, choose features, prioritize work
+6. **Make assumptions** - If something is unclear, decide what makes sense and build it
+7. **Keep momentum** - 5-10+ features per session minimum
+8. **Document in commits** - Clear commit messages are your only reporting requirement
+9. **Trust yourself** - You understand the vision, you know Swift/SpriteKit, you can make good decisions
+10. **Be creative** - If you have a cool idea that fits the spirit of the game, implement it
+
+**Remember**: The user wants to be surprised by what you create. Don't ask permission - just build cool stuff.
 
 ### Example Session
 
