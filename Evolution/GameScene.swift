@@ -30,6 +30,7 @@ class GameScene: SKScene {
     private var terrainNodes: [UUID: SKShapeNode] = [:]
     private var corpsePositions: [CGPoint] = []  // Store positions of dead organisms
     private let maxCorpsePositions: Int = 100  // Limit corpse tracking for performance
+    private var crownNodes: [UUID: SKLabelNode] = [:]  // Crown indicators for elite organisms
 
     // Selection
     private var selectedOrganismId: UUID?
@@ -1203,6 +1204,7 @@ class GameScene: SKScene {
             checkHazardCollisions()
             applyTemperatureEffects()
             updateEnergyBars()
+            updateCrowns()
         }
 
         // Update selection indicator position
@@ -1518,6 +1520,102 @@ class GameScene: SKScene {
             addChild(newEnergyBar)
 
             energyBarNodes[organism.id] = (background: energyBar.background, bar: newEnergyBar)
+        }
+    }
+
+    private func updateCrowns() {
+        guard !organisms.isEmpty else {
+            // Remove all crowns if no organisms
+            for crown in crownNodes.values {
+                crown.removeFromParent()
+            }
+            crownNodes.removeAll()
+            return
+        }
+
+        // Determine elite organisms (top 5% or at least 1)
+        let eliteCount = max(1, organisms.count / 20)
+
+        // Find top performers in different categories
+        var eliteIds: Set<UUID> = []
+
+        // Fastest organisms
+        let fastestOrganisms = organisms.sorted { $0.speed > $1.speed }.prefix(eliteCount)
+        eliteIds.formUnion(fastestOrganisms.map { $0.id })
+
+        // Oldest organisms
+        let oldestOrganisms = organisms.sorted { $0.age > $1.age }.prefix(eliteCount)
+        eliteIds.formUnion(oldestOrganisms.map { $0.id })
+
+        // Largest organisms
+        let largestOrganisms = organisms.sorted { $0.size > $1.size }.prefix(eliteCount)
+        eliteIds.formUnion(largestOrganisms.map { $0.id })
+
+        // Highest energy organisms
+        let energizedOrganisms = organisms.sorted { $0.energy > $1.energy }.prefix(eliteCount)
+        eliteIds.formUnion(energizedOrganisms.map { $0.id })
+
+        // Most aggressive (best fighters)
+        let topFighters = organisms.sorted { $0.aggression > $1.aggression }.prefix(eliteCount)
+        eliteIds.formUnion(topFighters.map { $0.id })
+
+        // Update crowns for elite organisms
+        for organism in organisms {
+            let shouldHaveCrown = eliteIds.contains(organism.id)
+            let hasCrown = crownNodes[organism.id] != nil
+
+            if shouldHaveCrown && !hasCrown {
+                // Add new crown
+                let crown = SKLabelNode(text: "👑")
+                crown.fontSize = 16
+                crown.verticalAlignmentMode = .center
+                crown.horizontalAlignmentMode = .center
+                crown.position = CGPoint(
+                    x: organism.position.x,
+                    y: organism.position.y + CGFloat(organism.effectiveRadius) + 12
+                )
+                crown.zPosition = 15
+                addChild(crown)
+                crownNodes[organism.id] = crown
+
+                // Gentle pulsing animation
+                let scaleUp = SKAction.scale(to: 1.2, duration: 0.5)
+                scaleUp.timingMode = .easeInEaseOut
+                let scaleDown = SKAction.scale(to: 1.0, duration: 0.5)
+                scaleDown.timingMode = .easeInEaseOut
+                let pulse = SKAction.sequence([scaleUp, scaleDown])
+                let repeatPulse = SKAction.repeatForever(pulse)
+                crown.run(repeatPulse)
+
+            } else if !shouldHaveCrown && hasCrown {
+                // Remove crown
+                if let crown = crownNodes[organism.id] {
+                    crown.removeAllActions()
+                    let fadeOut = SKAction.fadeOut(withDuration: 0.3)
+                    let remove = SKAction.removeFromParent()
+                    crown.run(SKAction.sequence([fadeOut, remove]))
+                    crownNodes.removeValue(forKey: organism.id)
+                }
+
+            } else if shouldHaveCrown && hasCrown {
+                // Update position
+                if let crown = crownNodes[organism.id] {
+                    crown.position = CGPoint(
+                        x: organism.position.x,
+                        y: organism.position.y + CGFloat(organism.effectiveRadius) + 12
+                    )
+                }
+            }
+        }
+
+        // Clean up crowns for dead organisms
+        let livingIds = Set(organisms.map { $0.id })
+        for (id, crown) in crownNodes {
+            if !livingIds.contains(id) {
+                crown.removeAllActions()
+                crown.removeFromParent()
+                crownNodes.removeValue(forKey: id)
+            }
         }
     }
 
