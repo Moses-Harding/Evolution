@@ -16,15 +16,17 @@ class GameScene: SKScene {
     // MARK: - Game State
     private var organisms: [Organism] = []
     private var food: [Food] = []
+    private var obstacles: [Obstacle] = []
     private var organismNodes: [UUID: SKShapeNode] = [:]
     private var senseRangeNodes: [UUID: SKShapeNode] = [:]  // Visual sense range indicators
+    private var energyBarNodes: [UUID: (background: SKShapeNode, bar: SKShapeNode)] = [:]  // Energy bars
     private var trailNodes: [UUID: [SKShapeNode]] = [:]  // Movement trails
     private var foodNodes: [UUID: SKShapeNode] = [:]
+    private var obstacleNodes: [UUID: SKShapeNode] = [:]
     private var corpsePositions: [CGPoint] = []  // Store positions of dead organisms
 
-    // Selection and stats display
+    // Selection
     private var selectedOrganismId: UUID?
-    private var statsPanel: SKNode?
     private var selectionIndicator: SKShapeNode?
 
     private var currentDay: Int = 0
@@ -32,6 +34,10 @@ class GameScene: SKScene {
     var showTrails: Bool = true  // Toggle for movement trails
     private let maxTrailLength: Int = 20  // Maximum trail segments per organism
     var showEliteHighlights: Bool = false  // Toggle for elite organism highlighting (disabled by default)
+
+    // Obstacle placement mode
+    var isPlacingObstacles: Bool = false
+    var currentObstacleType: ObstacleType = .wall
 
     // Food distribution patterns
     enum FoodPattern {
@@ -112,16 +118,6 @@ class GameScene: SKScene {
             let legendX = newSize.width - safeAreaInsets.right - 120
             let legendY = newSize.height - safeAreaInsets.top - 80
             legend.position = CGPoint(x: legendX, y: legendY)
-        }
-
-        // Update stats panel position if visible (using safe area aware bounds)
-        if let statsPanel = self.statsPanel {
-            let panelWidth: CGFloat = 300
-            let panelHeight: CGFloat = 400
-            // Keep panel within playable bounds which now includes safe area
-            let panelX = min(playableMaxX - panelWidth / 2, max(playableMinX + panelWidth / 2, statsPanel.position.x))
-            let panelY = min(playableMaxY - panelHeight / 2, max(playableMinY + panelHeight / 2, statsPanel.position.y))
-            statsPanel.position = CGPoint(x: panelX, y: panelY)
         }
 
         // Reposition any organisms that are now out of bounds
@@ -241,6 +237,11 @@ class GameScene: SKScene {
                 senseRange: configuration.initialSenseRange,
                 size: configuration.initialSize,
                 fertility: configuration.initialFertility,
+                energyEfficiency: configuration.initialEnergyEfficiency,
+                maxAge: configuration.initialMaxAge,
+                aggression: configuration.initialAggression,
+                defense: configuration.initialDefense,
+                metabolism: configuration.initialMetabolism,
                 position: CGPoint(x: randomX, y: randomY),
                 generation: 0,
                 configuration: configuration
@@ -425,10 +426,16 @@ class GameScene: SKScene {
             // Continue movement and collision detection
             updateOrganisms(deltaTime: deltaTime)
             checkCollisions()
+            checkHazardCollisions()
+            updateEnergyBars()
         }
 
-        // Update selection indicator to follow selected organism
-        updateSelectionIndicator()
+        // Update selection indicator position
+        if let selectedId = selectedOrganismId,
+           let organism = organisms.first(where: { $0.id == selectedId }),
+           let indicator = selectionIndicator {
+            indicator.position = organism.position
+        }
     }
 
     private func shouldEndDay() -> Bool {
@@ -457,13 +464,31 @@ class GameScene: SKScene {
             // Move towards target food
             if let target = organism.targetFood, !organism.hasFoodToday {
                 let oldPosition = organism.position
-                var newPosition = organism.move(towards: target.position, deltaTime: deltaTime)
+                let (var newPosition, energyCost) = organism.move(towards: target.position, deltaTime: deltaTime)
 
                 // Clamp to playable bounds
                 newPosition.x = max(playableMinX, min(playableMaxX, newPosition.x))
                 newPosition.y = max(playableMinY, min(playableMaxY, newPosition.y))
 
+                // Check for obstacle collisions and adjust position if needed
+                var collided = false
+                for obstacle in obstacles {
+                    if obstacle.collidesWith(organismPosition: newPosition, organismRadius: CGFloat(organism.effectiveRadius)) {
+                        // Collision detected - revert to old position
+                        newPosition = oldPosition
+                        collided = true
+                        // Clear target to find a new path next frame
+                        organism.targetFood = nil
+                        break
+                    }
+                }
+
                 organism.position = newPosition
+
+                // Consume energy only if actually moved
+                if !collided {
+                    organism.consumeEnergy(energyCost)
+                }
 
                 // Add trail segment if position changed significantly
                 if showTrails {
@@ -541,6 +566,92 @@ class GameScene: SKScene {
         return nearest
     }
 
+    private func resolveFoodContest(for organism: Organism, food: Food) -> Organism {
+        // Find all organisms within contest range of this food
+        var contestants: [Organism] = []
+
+        for other in organisms where !other.hasFoodToday {
+            let dx = food.position.x - other.position.x
+            let dy = food.position.y - other.position.y
+            let distance = sqrt(dx * dx + dy * dy)
+
+            if distance < configuration.foodContestRange {
+                contestants.append(other)
+            }
+        }
+
+        // If only one contestant, they win automatically
+        if contestants.count <= 1 {
+            return organism
+        }
+
+        // Multiple contestants - resolve with aggression vs defense
+        var winner = contestants[0]
+        var highestScore: Double = 0.0
+
+        for contestant in contestants {
+            // Calculate contest score: aggression + random factor - opponents' defense
+            let aggressionBonus = contestant.aggression * 50  // 0-50 points from aggression
+            let randomFactor = Double.random(in: 0...30)  // Random element
+            let sizeBonus = (contestant.size - 1.0) * 10  // Larger organisms have advantage
+
+            // Defense reduces others' effectiveness against this contestant
+            let defenseReduction = (1.0 - contestant.defense) * 20  // 0-20 penalty
+
+            let contestScore = aggressionBonus + randomFactor + sizeBonus - defenseReduction
+
+            if contestScore > highestScore {
+                highestScore = contestScore
+                winner = contestant
+            }
+        }
+
+        // Visual feedback for contest
+        if winner.id != organism.id && contestants.contains(where: { $0.id == organism.id }) {
+            // This organism lost the contest - show red flash
+            if let node = organismNodes[organism.id] {
+                let originalColor = node.fillColor
+                node.fillColor = SKColor.red
+                let resetColor = SKAction.run {
+                    node.fillColor = originalColor
+                }
+                let wait = SKAction.wait(forDuration: 0.2)
+                node.run(SKAction.sequence([wait, resetColor]))
+            }
+        }
+
+        return winner
+    }
+
+    private func updateEnergyBars() {
+        for organism in organisms {
+            guard let energyBar = energyBarNodes[organism.id] else { continue }
+
+            let barWidth: CGFloat = 20
+            let barOffsetY: CGFloat = CGFloat(organism.effectiveRadius) + 5
+
+            // Update positions
+            energyBar.background.position = CGPoint(x: organism.position.x, y: organism.position.y + barOffsetY)
+            energyBar.bar.position = CGPoint(x: organism.position.x, y: organism.position.y + barOffsetY)
+
+            // Update bar width and color based on current energy
+            let energyRatio = organism.energy / configuration.maxEnergy
+            let currentBarWidth = barWidth * CGFloat(energyRatio)
+
+            // Recreate the bar with new width
+            energyBar.bar.removeFromParent()
+            let newEnergyBar = SKShapeNode(rectOf: CGSize(width: currentBarWidth, height: 3))
+            let energyColor = getEnergyColor(ratio: energyRatio)
+            newEnergyBar.fillColor = energyColor
+            newEnergyBar.strokeColor = .clear
+            newEnergyBar.position = CGPoint(x: organism.position.x, y: organism.position.y + barOffsetY)
+            newEnergyBar.zPosition = 12
+            addChild(newEnergyBar)
+
+            energyBarNodes[organism.id] = (background: energyBar.background, bar: newEnergyBar)
+        }
+    }
+
     private func checkCollisions() {
         for organism in organisms where !organism.hasFoodToday {
             if let target = organism.targetFood {
@@ -550,12 +661,19 @@ class GameScene: SKScene {
 
                 let collisionDistance = CGFloat(organism.effectiveRadius) + CGFloat(configuration.foodSize / 2)
                 if distance < collisionDistance {
-                    // Collision detected!
-                    organism.hasFoodToday = true
-                    target.isClaimed = true
+                    // Check for food contestation from nearby aggressive organisms
+                    let winner = resolveFoodContest(for: organism, food: target)
 
-                    // Update visual feedback with animation
-                    if let foodNode = foodNodes[target.id] {
+                    if winner.id == organism.id {
+                        // This organism won the food (or no contest)
+                        organism.hasFoodToday = true
+                        target.isClaimed = true
+
+                        // Restore energy from eating
+                        organism.gainEnergy(configuration.energyGainFromFood)
+
+                        // Update visual feedback with animation
+                        if let foodNode = foodNodes[target.id] {
                         // Animate food being consumed
                         let shrink = SKAction.scale(to: 0.3, duration: 0.2)
                         let fadeOut = SKAction.fadeAlpha(to: 0.3, duration: 0.2)
@@ -582,10 +700,40 @@ class GameScene: SKScene {
         }
     }
 
+    private func checkHazardCollisions() {
+        var organismsToRemove: [Organism] = []
+
+        for organism in organisms {
+            for obstacle in obstacles where obstacle.type == .hazard {
+                if obstacle.collidesWith(organismPosition: organism.position, organismRadius: CGFloat(organism.effectiveRadius)) {
+                    // Organism entered hazard - mark for removal
+                    organismsToRemove.append(organism)
+                    // Add death effect at hazard
+                    addDeathParticles(at: organism.position, color: organism.color)
+                    break
+                }
+            }
+        }
+
+        // Remove organisms that entered hazards
+        for organism in organismsToRemove {
+            removeOrganism(organism, animated: true)
+        }
+        organisms.removeAll { organism in
+            organismsToRemove.contains { $0.id == organism.id }
+        }
+    }
+
     private func endDay() {
         var births = 0
         var deaths = 0
         corpsePositions.removeAll()  // Clear previous corpse positions
+
+        // Age all organisms and apply metabolism cost
+        for organism in organisms {
+            organism.incrementAge()
+            organism.consumeEnergy(configuration.metabolismEnergyCost)
+        }
 
         // Handle reproduction for all organisms that ate today
         let fedOrganisms = organisms.filter { $0.hasFoodToday }
@@ -615,15 +763,26 @@ class GameScene: SKScene {
             }
         }
 
-        // Handle deaths (organisms that didn't eat)
+        // Handle deaths (organisms that didn't eat, starved, or died of old age)
         let survivors = organisms.filter { organism in
-            if organism.hasFoodToday {
-                return true
-            } else {
+            if organism.isDead || !organism.hasFoodToday {
                 deaths += 1
                 corpsePositions.append(organism.position)  // Store corpse position
-                removeOrganism(organism, animated: true)
+
+                // Different death animations based on cause
+                if organism.isStarving {
+                    // Starvation death - fade out slowly
+                    removeOrganism(organism, animated: true)
+                } else if organism.age >= organism.maxAge {
+                    // Old age death - peaceful fade
+                    removeOrganism(organism, animated: true)
+                } else {
+                    // Starvation (didn't eat)
+                    removeOrganism(organism, animated: true)
+                }
                 return false
+            } else {
+                return true
             }
         }
 
@@ -712,6 +871,42 @@ class GameScene: SKScene {
 
         organismNodes[organism.id] = node
         addChild(node)
+
+        // Create energy bar above organism
+        let barWidth: CGFloat = 20
+        let barHeight: CGFloat = 3
+        let barOffsetY: CGFloat = CGFloat(organism.effectiveRadius) + 5
+
+        // Background (gray bar)
+        let barBackground = SKShapeNode(rectOf: CGSize(width: barWidth, height: barHeight))
+        barBackground.fillColor = SKColor(white: 0.3, alpha: 0.8)
+        barBackground.strokeColor = .clear
+        barBackground.position = CGPoint(x: organism.position.x, y: organism.position.y + barOffsetY)
+        barBackground.zPosition = 11
+        addChild(barBackground)
+
+        // Foreground (colored bar showing current energy)
+        let energyRatio = organism.energy / configuration.maxEnergy
+        let currentBarWidth = barWidth * CGFloat(energyRatio)
+        let energyBar = SKShapeNode(rectOf: CGSize(width: currentBarWidth, height: barHeight))
+        let energyColor = getEnergyColor(ratio: energyRatio)
+        energyBar.fillColor = energyColor
+        energyBar.strokeColor = .clear
+        energyBar.position = CGPoint(x: organism.position.x, y: organism.position.y + barOffsetY)
+        energyBar.zPosition = 12
+        addChild(energyBar)
+
+        energyBarNodes[organism.id] = (background: barBackground, bar: energyBar)
+    }
+
+    private func getEnergyColor(ratio: Double) -> SKColor {
+        if ratio < 0.3 {
+            return SKColor(red: 1.0, green: 0.0, blue: 0.0, alpha: 0.9)  // Red
+        } else if ratio < 0.6 {
+            return SKColor(red: 1.0, green: 0.6, blue: 0.0, alpha: 0.9)  // Orange
+        } else {
+            return SKColor(red: 0.0, green: 1.0, blue: 0.0, alpha: 0.9)  // Green
+        }
     }
 
     private func removeOrganism(_ organism: Organism, animated: Bool = false) {
@@ -725,6 +920,13 @@ class GameScene: SKScene {
         if let senseNode = senseRangeNodes[organism.id] {
             senseNode.removeFromParent()
             senseRangeNodes.removeValue(forKey: organism.id)
+        }
+
+        // Remove energy bar
+        if let energyBar = energyBarNodes[organism.id] {
+            energyBar.background.removeFromParent()
+            energyBar.bar.removeFromParent()
+            energyBarNodes.removeValue(forKey: organism.id)
         }
 
         // Remove all trail segments
@@ -815,6 +1017,62 @@ class GameScene: SKScene {
         addChild(node)
     }
 
+    // MARK: - Obstacle Management
+    func addObstacle(_ obstacle: Obstacle) {
+        obstacles.append(obstacle)
+
+        let node: SKShapeNode
+        switch obstacle.type {
+        case .wall:
+            node = SKShapeNode(rectOf: obstacle.size, cornerRadius: 5)
+            node.fillColor = SKColor(white: 0.3, alpha: 0.9)
+            node.strokeColor = SKColor(white: 0.5, alpha: 1.0)
+            node.lineWidth = 2
+
+        case .rock:
+            node = SKShapeNode(circleOfRadius: obstacle.radius)
+            node.fillColor = SKColor(red: 0.4, green: 0.3, blue: 0.2, alpha: 0.9)
+            node.strokeColor = SKColor(red: 0.6, green: 0.5, blue: 0.4, alpha: 1.0)
+            node.lineWidth = 2
+
+        case .hazard:
+            node = SKShapeNode(circleOfRadius: obstacle.radius)
+            node.fillColor = SKColor(red: 0.8, green: 0.1, blue: 0.1, alpha: 0.4)
+            node.strokeColor = SKColor(red: 1.0, green: 0.2, blue: 0.2, alpha: 0.8)
+            node.lineWidth = 2
+            node.glowWidth = 10
+
+            // Add pulsing animation for hazards
+            let scaleUp = SKAction.scale(to: 1.1, duration: 0.8)
+            let scaleDown = SKAction.scale(to: 1.0, duration: 0.8)
+            let pulse = SKAction.sequence([scaleUp, scaleDown])
+            let forever = SKAction.repeatForever(pulse)
+            node.run(forever, withKey: "hazardPulse")
+        }
+
+        node.position = obstacle.position
+        node.zRotation = obstacle.rotation
+        node.zPosition = 3
+        obstacleNodes[obstacle.id] = node
+        addChild(node)
+    }
+
+    func removeObstacle(_ obstacle: Obstacle) {
+        if let node = obstacleNodes[obstacle.id] {
+            node.removeFromParent()
+            obstacleNodes.removeValue(forKey: obstacle.id)
+        }
+        obstacles.removeAll { $0.id == obstacle.id }
+    }
+
+    func clearAllObstacles() {
+        for node in obstacleNodes.values {
+            node.removeFromParent()
+        }
+        obstacleNodes.removeAll()
+        obstacles.removeAll()
+    }
+
     // MARK: - Statistics
     private func updateStatistics() {
         statistics.currentDay = currentDay
@@ -854,6 +1112,31 @@ class GameScene: SKScene {
             statistics.minFertility = fertilities.min() ?? 0.0
             statistics.maxFertility = fertilities.max() ?? 0.0
 
+            let energies = organisms.map { $0.energy }
+            statistics.averageEnergy = energies.reduce(0.0, +) / Double(energies.count)
+            statistics.minEnergy = energies.min() ?? 0.0
+            statistics.maxEnergy = energies.max() ?? 0.0
+
+            let ages = organisms.map { $0.age }
+            statistics.averageAge = Double(ages.reduce(0, +)) / Double(ages.count)
+            statistics.minAge = ages.min() ?? 0
+            statistics.maxAge = ages.max() ?? 0
+
+            let efficiencies = organisms.map { $0.energyEfficiency }
+            statistics.averageEnergyEfficiency = efficiencies.reduce(0.0, +) / Double(efficiencies.count)
+
+            let maxAges = organisms.map { $0.maxAge }
+            statistics.averageMaxAge = Double(maxAges.reduce(0, +)) / Double(maxAges.count)
+
+            let aggressions = organisms.map { $0.aggression }
+            statistics.averageAggression = aggressions.reduce(0.0, +) / Double(aggressions.count)
+
+            let defenses = organisms.map { $0.defense }
+            statistics.averageDefense = defenses.reduce(0.0, +) / Double(defenses.count)
+
+            let metabolisms = organisms.map { $0.metabolism }
+            statistics.averageMetabolism = metabolisms.reduce(0.0, +) / Double(metabolisms.count)
+
             // Update elite organism highlighting
             if showEliteHighlights {
                 updateEliteOrganisms()
@@ -867,6 +1150,13 @@ class GameScene: SKScene {
                 senseRange: organism.senseRange,
                 size: organism.size,
                 fertility: organism.fertility,
+                energyEfficiency: organism.energyEfficiency,
+                maxAge: organism.maxAge,
+                aggression: organism.aggression,
+                defense: organism.defense,
+                metabolism: organism.metabolism,
+                energy: organism.energy,
+                age: organism.age,
                 generation: organism.generation,
                 hasFoodToday: organism.hasFoodToday
             )
@@ -1666,6 +1956,21 @@ class GameScene: SKScene {
         guard let touch = touches.first else { return }
         let location = touch.location(in: self)
 
+        // If in obstacle placement mode, place an obstacle
+        if isPlacingObstacles {
+            let obstacle: Obstacle
+            switch currentObstacleType {
+            case .wall:
+                obstacle = Obstacle(position: location, size: CGSize(width: 60, height: 60), type: .wall)
+            case .rock:
+                obstacle = Obstacle(position: location, radius: 30, type: .rock)
+            case .hazard:
+                obstacle = Obstacle(position: location, radius: 35, type: .hazard)
+            }
+            addObstacle(obstacle)
+            return
+        }
+
         // Check if tapped on an organism
         var tappedOrganism: Organism?
         var shortestDistance: CGFloat = .infinity
@@ -1727,9 +2032,6 @@ class GameScene: SKScene {
 
         selectionIndicator = indicator
         addChild(indicator)
-
-        // Show stats panel
-        showStatsPanel(for: organism)
     }
 
     private func deselectOrganism() {
@@ -1738,152 +2040,6 @@ class GameScene: SKScene {
         // Remove selection indicator
         selectionIndicator?.removeFromParent()
         selectionIndicator = nil
-
-        // Remove stats panel
-        statsPanel?.removeFromParent()
-        statsPanel = nil
-    }
-
-    private func showStatsPanel(for organism: Organism) {
-        // Remove old stats panel if exists
-        statsPanel?.removeFromParent()
-
-        // Create container for stats
-        let panel = SKNode()
-        panel.zPosition = 2000
-
-        // Position panel near organism but within screen bounds
-        var panelX = organism.position.x + 80
-        var panelY = organism.position.y
-
-        // Keep panel on screen
-        let panelWidth: CGFloat = 200
-        let panelHeight: CGFloat = 200
-
-        if panelX + panelWidth / 2 > size.width - 20 {
-            panelX = organism.position.x - 80
-        }
-        if panelY + panelHeight / 2 > size.height - 20 {
-            panelY = size.height - panelHeight / 2 - 20
-        }
-        if panelY - panelHeight / 2 < 20 {
-            panelY = panelHeight / 2 + 20
-        }
-
-        panel.position = CGPoint(x: panelX, y: panelY)
-
-        // Create background
-        let background = SKShapeNode(rectOf: CGSize(width: panelWidth, height: panelHeight), cornerRadius: 10)
-        background.fillColor = SKColor(white: 0.1, alpha: 0.9)
-        background.strokeColor = .white
-        background.lineWidth = 2
-        background.glowWidth = 5
-        panel.addChild(background)
-
-        // Create stats labels
-        let fontSize: CGFloat = 14
-        let lineHeight: CGFloat = 18
-        var yOffset: CGFloat = panelHeight / 2 - 20
-
-        // Helper function to add a label
-        func addLabel(text: String) {
-            let label = SKLabelNode(text: text)
-            label.fontName = "Courier"
-            label.fontSize = fontSize
-            label.fontColor = .white
-            label.horizontalAlignmentMode = .left
-            label.position = CGPoint(x: -panelWidth / 2 + 10, y: yOffset)
-            panel.addChild(label)
-            yOffset -= lineHeight
-        }
-
-        // Add title
-        let titleLabel = SKLabelNode(text: "ORGANISM STATS")
-        titleLabel.fontName = "Courier-Bold"
-        titleLabel.fontSize = 16
-        titleLabel.fontColor = .cyan
-        titleLabel.horizontalAlignmentMode = .center
-        titleLabel.position = CGPoint(x: 0, y: yOffset)
-        panel.addChild(titleLabel)
-        yOffset -= lineHeight + 5
-
-        // Add separator
-        let separator1 = SKShapeNode(rectOf: CGSize(width: panelWidth - 20, height: 1))
-        separator1.fillColor = .gray
-        separator1.strokeColor = .clear
-        separator1.position = CGPoint(x: 0, y: yOffset)
-        panel.addChild(separator1)
-        yOffset -= 10
-
-        // Add stats
-        addLabel(text: "ID: \(String(organism.id.uuidString.prefix(8)))...")
-        addLabel(text: "Generation: \(organism.generation)")
-        yOffset -= 5
-
-        addLabel(text: "Speed: \(organism.speed)")
-        addLabel(text: "Eff. Speed: \(String(format: "%.1f", organism.effectiveSpeed))")
-        addLabel(text: "Sense Range: \(organism.senseRange)")
-        addLabel(text: "Size: \(String(format: "%.2f", organism.size))")
-        addLabel(text: "Fertility: \(String(format: "%.2f", organism.fertility))")
-        yOffset -= 5
-
-        addLabel(text: "Has Food: \(organism.hasFoodToday ? "Yes ✓" : "No")")
-
-        // Add separator
-        let separator2 = SKShapeNode(rectOf: CGSize(width: panelWidth - 20, height: 1))
-        separator2.fillColor = .gray
-        separator2.strokeColor = .clear
-        separator2.position = CGPoint(x: 0, y: yOffset)
-        panel.addChild(separator2)
-        yOffset -= 10
-
-        // Add fitness info
-        let fitness = calculateFitness(for: organism)
-        addLabel(text: "Fitness: \(String(format: "%.2f", fitness))")
-
-        // Calculate rank
-        let sortedOrganisms = organisms.sorted { calculateFitness(for: $0) > calculateFitness(for: $1) }
-        if let rank = sortedOrganisms.firstIndex(where: { $0.id == organism.id }) {
-            addLabel(text: "Rank: \(rank + 1)/\(organisms.count)")
-        }
-
-        // Add close instruction
-        yOffset = -panelHeight / 2 + 15
-        let closeLabel = SKLabelNode(text: "Tap to close")
-        closeLabel.fontName = "Courier"
-        closeLabel.fontSize = 11
-        closeLabel.fontColor = .gray
-        closeLabel.horizontalAlignmentMode = .center
-        closeLabel.position = CGPoint(x: 0, y: yOffset)
-        panel.addChild(closeLabel)
-
-        // Fade in animation
-        panel.alpha = 0
-        panel.setScale(0.8)
-        let fadeIn = SKAction.fadeIn(withDuration: 0.2)
-        let scaleUp = SKAction.scale(to: 1.0, duration: 0.2)
-        let group = SKAction.group([fadeIn, scaleUp])
-        panel.run(group)
-
-        statsPanel = panel
-        addChild(panel)
-    }
-
-    private func updateSelectionIndicator() {
-        // Update position of selection indicator if organism still exists
-        guard let selectedId = selectedOrganismId,
-              let organism = organisms.first(where: { $0.id == selectedId }),
-              let indicator = selectionIndicator else {
-            return
-        }
-
-        indicator.position = organism.position
-
-        // Update stats panel if it exists
-        if statsPanel != nil {
-            // Remove and recreate stats panel to update values
-            showStatsPanel(for: organism)
-        }
     }
 }
 
@@ -1903,6 +2059,17 @@ struct GameStatistics {
     var averageFertility: Double = 0.0
     var minFertility: Double = 0.0
     var maxFertility: Double = 0.0
+    var averageEnergy: Double = 0.0
+    var minEnergy: Double = 0.0
+    var maxEnergy: Double = 0.0
+    var averageAge: Double = 0.0
+    var minAge: Int = 0
+    var maxAge: Int = 0
+    var averageEnergyEfficiency: Double = 0.0
+    var averageMaxAge: Double = 0.0
+    var averageAggression: Double = 0.0
+    var averageDefense: Double = 0.0
+    var averageMetabolism: Double = 0.0
     var births: Int = 0
     var deaths: Int = 0
     var organisms: [OrganismInfo] = []
@@ -1915,6 +2082,13 @@ struct OrganismInfo: Identifiable {
     let senseRange: Int
     let size: Double
     let fertility: Double
+    let energyEfficiency: Double
+    let maxAge: Int
+    let aggression: Double
+    let defense: Double
+    let metabolism: Double
+    let energy: Double
+    let age: Int
     let generation: Int
     let hasFoodToday: Bool
 }

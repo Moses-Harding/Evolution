@@ -204,14 +204,48 @@ struct OrganismStatsModal: View {
 
                 Divider()
 
-                // Stats Grid
-                VStack(alignment: .leading, spacing: 12) {
+                // Scrollable Stats Grid
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 12) {
                     StatRow(label: "ID", value: String(organism.id.uuidString.prefix(8)))
                     StatRow(label: "Generation", value: "\(organism.generation)")
-                    StatRow(label: "Speed", value: String(format: "%.1f", organism.speed))
-                    StatRow(label: "Sense Range", value: String(format: "%.0f", organism.senseRange))
-                    StatRow(label: "Size", value: String(format: "%.1f", organism.size))
-                    StatRow(label: "Fertility", value: String(format: "%.0f%%", organism.fertility * 100))
+                    StatRow(label: "Age", value: "\(organism.age)/\(organism.maxAge) days")
+                        .foregroundColor(organism.age > organism.maxAge * 3/4 ? .orange : .primary)
+
+                    Divider()
+
+                    // Movement
+                    Text("Movement").font(.headline).foregroundColor(.cyan)
+                    StatRow(label: "Speed", value: "\(organism.speed)")
+                    StatRow(label: "Effective Speed", value: String(format: "%.1f", organism.effectiveSpeed))
+                    StatRow(label: "Sense Range", value: "\(organism.senseRange)")
+
+                    Divider()
+
+                    // Energy
+                    Text("Energy").font(.headline).foregroundColor(.yellow)
+                    StatRow(label: "Current Energy", value: String(format: "%.1f/100", organism.energy))
+                        .foregroundColor(organism.energy < 30 ? .red : organism.energy < 60 ? .orange : .green)
+                    StatRow(label: "Energy Efficiency", value: String(format: "%.2fx", organism.energyEfficiency))
+                    StatRow(label: "Metabolism", value: String(format: "%.2fx", organism.metabolism))
+
+                    Divider()
+
+                    // Combat & Survival
+                    Text("Combat").font(.headline).foregroundColor(.red)
+                    StatRow(label: "Aggression", value: String(format: "%.0f%%", organism.aggression * 100))
+                    StatRow(label: "Defense", value: String(format: "%.0f%%", organism.defense * 100))
+
+                    Divider()
+
+                    // Physical
+                    Text("Physical").font(.headline).foregroundColor(.purple)
+                    StatRow(label: "Size", value: String(format: "%.2f", organism.size))
+                    StatRow(label: "Fertility", value: String(format: "%.1f%%", organism.fertility * 100))
+
+                    Divider()
+
+                    // Status
                     StatRow(label: "Has Food Today", value: organism.hasFoodToday ? "Yes ✓" : "No ✗")
                         .foregroundColor(organism.hasFoodToday ? .green : .red)
 
@@ -242,11 +276,10 @@ struct OrganismStatsModal: View {
                             )
                     }
                 }
-
-                Spacer()
+                }
             }
             .padding()
-            .frame(maxWidth: 320)
+            .frame(maxWidth: 380, maxHeight: 600)
             .background(
                 RoundedRectangle(cornerRadius: 20)
                     .fill(.ultraThinMaterial)
@@ -286,8 +319,25 @@ struct GameControls: View {
     @Binding var showStats: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 12) {
+                // Pause/Resume toggle
+                Button(action: {
+                    viewModel.isPaused.toggle()
+                }) {
+                    HStack(spacing: 6) {
+                        Image(systemName: viewModel.isPaused ? "play.fill" : "pause.fill")
+                        Text(viewModel.isPaused ? "Resume" : "Pause")
+                            .fontWeight(.bold)
+                    }
+                    .font(.system(size: 16))
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(viewModel.isPaused ? Color.green : Color.red)
+                    .foregroundColor(.white)
+                    .cornerRadius(8)
+                }
+
                 // Super speed toggle
                 Button(action: {
                     viewModel.isSuperSpeed.toggle()
@@ -322,6 +372,66 @@ struct GameControls: View {
                     .cornerRadius(8)
                 }
             }
+
+            // Obstacle controls
+            HStack(spacing: 12) {
+                // Obstacle placement toggle
+                Button(action: {
+                    viewModel.isPlacingObstacles.toggle()
+                }) {
+                    HStack(spacing: 6) {
+                        Image(systemName: viewModel.isPlacingObstacles ? "cube.fill" : "cube")
+                        Text(viewModel.isPlacingObstacles ? "Place" : "Select")
+                            .fontWeight(.bold)
+                    }
+                    .font(.system(size: 16))
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(viewModel.isPlacingObstacles ? Color.green : Color.gray)
+                    .foregroundColor(.white)
+                    .cornerRadius(8)
+                }
+
+                // Obstacle type picker (only show when placing)
+                if viewModel.isPlacingObstacles {
+                    Menu {
+                        Button(action: { viewModel.obstacleType = .wall }) {
+                            Label("Wall", systemImage: "rectangle.fill")
+                        }
+                        Button(action: { viewModel.obstacleType = .rock }) {
+                            Label("Rock", systemImage: "circle.fill")
+                        }
+                        Button(action: { viewModel.obstacleType = .hazard }) {
+                            Label("Hazard", systemImage: "exclamationmark.triangle.fill")
+                        }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: viewModel.obstacleType == .wall ? "rectangle.fill" : viewModel.obstacleType == .rock ? "circle.fill" : "exclamationmark.triangle.fill")
+                            Text(viewModel.obstacleTypeLabel)
+                                .fontWeight(.bold)
+                        }
+                        .font(.system(size: 16))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(Color.indigo)
+                        .foregroundColor(.white)
+                        .cornerRadius(8)
+                    }
+
+                    // Clear obstacles button
+                    Button(action: {
+                        viewModel.clearObstacles()
+                    }) {
+                        Image(systemName: "trash.fill")
+                            .font(.system(size: 16))
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(Color.red)
+                            .foregroundColor(.white)
+                            .cornerRadius(8)
+                    }
+                }
+            }
         }
     }
 }
@@ -334,11 +444,38 @@ class GameViewModel: ObservableObject {
             scene.timeScale = isSuperSpeed ? 2.0 : 1.0
         }
     }
+    @Published var isPlacingObstacles: Bool = false {
+        didSet {
+            scene.isPlacingObstacles = isPlacingObstacles
+        }
+    }
+    @Published var obstacleType: ObstacleType = .wall {
+        didSet {
+            scene.currentObstacleType = obstacleType
+        }
+    }
+    @Published var isPaused: Bool = false {
+        didSet {
+            scene.isPaused = isPaused
+        }
+    }
+
+    var obstacleTypeLabel: String {
+        switch obstacleType {
+        case .wall: return "Wall"
+        case .rock: return "Rock"
+        case .hazard: return "Hazard"
+        }
+    }
 
     let scene: GameScene
     let configuration: GameConfiguration
 
     private var cancellables = Set<AnyCancellable>()
+
+    func clearObstacles() {
+        scene.clearAllObstacles()
+    }
 
     init(configuration: GameConfiguration = .default) {
         self.configuration = configuration
