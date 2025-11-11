@@ -32,10 +32,12 @@ class GameScene: SKScene {
     private var selectionIndicator: SKShapeNode?
 
     private var currentDay: Int = 0
+    private var dayNightProgress: Double = 0.0  // 0.0 = midnight, 0.5 = noon, 1.0 = midnight
     var showSenseRanges: Bool = true  // Toggle for sense range visualization
     var showTrails: Bool = true  // Toggle for movement trails
     private let maxTrailLength: Int = 20  // Maximum trail segments per organism
     var showEliteHighlights: Bool = false  // Toggle for elite organism highlighting (disabled by default)
+    private var dayNightOverlay: SKShapeNode?  // Visual overlay for day/night
 
     // Obstacle placement mode
     var isPlacingObstacles: Bool = false
@@ -86,6 +88,7 @@ class GameScene: SKScene {
         setupInitialPopulation()
         spawnFood()
         spawnTemperatureZones()
+        setupDayNightOverlay()
         updateStatistics()
         showLegend()
     }
@@ -414,6 +417,70 @@ class GameScene: SKScene {
         label.run(SKAction.sequence([fadeIn, wait, fadeOut, remove]))
     }
 
+    // MARK: - Day/Night Cycle
+    private func setupDayNightOverlay() {
+        // Create overlay that covers entire scene
+        dayNightOverlay = SKShapeNode(rectOf: size)
+        guard let overlay = dayNightOverlay else { return }
+
+        overlay.position = CGPoint(x: size.width / 2, y: size.height / 2)
+        overlay.fillColor = .black
+        overlay.strokeColor = .clear
+        overlay.alpha = 0.0
+        overlay.zPosition = 100  // Above everything except UI
+        overlay.isUserInteractionEnabled = false
+
+        addChild(overlay)
+    }
+
+    private func updateDayNightCycle(deltaTime: Double) {
+        guard configuration.dayNightCycleEnabled else { return }
+
+        // Progress through day/night cycle
+        dayNightProgress += deltaTime / configuration.dayNightCycleDuration
+        dayNightProgress = dayNightProgress.truncatingRemainder(dividingBy: 1.0)
+
+        // Update visual overlay
+        updateDayNightVisuals()
+    }
+
+    private func updateDayNightVisuals() {
+        guard let overlay = dayNightOverlay else { return }
+
+        // Calculate darkness level based on time of day
+        // 0.0 (midnight) = darkest, 0.5 (noon) = brightest
+        let darknessLevel = getDarknessLevel()
+        overlay.alpha = darknessLevel * 0.5  // Max 50% opacity at midnight
+    }
+
+    private func getDarknessLevel() -> Double {
+        // Smooth transition using cosine
+        // dayNightProgress: 0.0 = midnight, 0.5 = noon, 1.0 = midnight
+        // Returns: 0.0 = full brightness (noon), 1.0 = full darkness (midnight)
+        let angle = dayNightProgress * 2.0 * .pi
+        let brightness = (cos(angle) + 1.0) / 2.0  // 0.0 at midnight, 1.0 at noon
+        return 1.0 - brightness
+    }
+
+    private func isNightTime() -> Bool {
+        let darknessLevel = getDarknessLevel()
+        return darknessLevel > 0.3  // Night if more than 30% dark
+    }
+
+    private func getEffectiveSenseRange(for organism: Organism) -> Int {
+        if isNightTime() && configuration.dayNightCycleEnabled {
+            return Int(Double(organism.senseRange) * configuration.nightSenseRangeMultiplier)
+        }
+        return organism.senseRange
+    }
+
+    private func getDayNightEnergyMultiplier() -> Double {
+        if isNightTime() && configuration.dayNightCycleEnabled {
+            return configuration.nightEnergyMultiplier
+        }
+        return 1.0
+    }
+
     // MARK: - Temperature Zone Management
     private func spawnTemperatureZones() {
         // Clear old zones
@@ -504,6 +571,8 @@ class GameScene: SKScene {
     }
 
     private func applyTemperatureEffects() {
+        let dayNightMultiplier = getDayNightEnergyMultiplier()
+
         for organism in organisms {
             let currentTemp = getTemperatureAt(position: organism.position)
             let tempDifference = abs(currentTemp - configuration.baseTemperature)
@@ -522,13 +591,13 @@ class GameScene: SKScene {
                     organism.consumeEnergy(organism.energy)  // Drain all energy
                 }
             } else if tempDifference > 0 {
-                // Apply energy cost based on temperature
+                // Apply energy cost based on temperature and day/night
                 let isTooHot = currentTemp > configuration.baseTemperature
                 let tolerance = isTooHot ? organism.heatTolerance : organism.coldTolerance
 
                 // Tolerance reduces energy cost
                 let effectiveDifference = tempDifference * (1.0 - tolerance * 0.8)
-                let energyCost = effectiveDifference * configuration.temperatureEnergyMultiplier
+                let energyCost = effectiveDifference * configuration.temperatureEnergyMultiplier * dayNightMultiplier
 
                 organism.consumeEnergy(energyCost)
             }
@@ -538,6 +607,9 @@ class GameScene: SKScene {
     // MARK: - Update Loop
     override func update(_ currentTime: TimeInterval) {
         let deltaTime = (1.0 / 60.0) * timeScale  // Apply time scale
+
+        // Update day/night cycle
+        updateDayNightCycle(deltaTime: deltaTime)
 
         // Check if day should end
         if shouldEndDay() {
@@ -632,9 +704,25 @@ class GameScene: SKScene {
                     node.position = newPosition
                 }
 
-                // Update sense range indicator
+                // Update sense range indicator (position and size for day/night)
                 if let senseNode = senseRangeNodes[organism.id] {
                     senseNode.position = newPosition
+
+                    // Update sense range size based on time of day
+                    let effectiveSenseRange = getEffectiveSenseRange(for: organism)
+                    let targetRadius = CGFloat(effectiveSenseRange)
+                    if abs(senseNode.path?.boundingBox.width ?? 0 - targetRadius * 2) > 1.0 {
+                        // Recreate node with new radius (animated transition would be smoother but more complex)
+                        senseNode.removeFromParent()
+                        let newSenseNode = SKShapeNode(circleOfRadius: targetRadius)
+                        newSenseNode.strokeColor = SKColor(red: 0.5, green: 0.8, blue: 1.0, alpha: 0.35)
+                        newSenseNode.lineWidth = 1.5
+                        newSenseNode.fillColor = .clear
+                        newSenseNode.position = newPosition
+                        newSenseNode.zPosition = 1
+                        senseRangeNodes[organism.id] = newSenseNode
+                        addChild(newSenseNode)
+                    }
                 }
             }
         }
@@ -676,7 +764,8 @@ class GameScene: SKScene {
     private func findNearestUnclaimedFood(for organism: Organism) -> Food? {
         var nearest: Food?
         var nearestDistance: CGFloat = .infinity
-        let maxSenseDistance = CGFloat(organism.senseRange)
+        let effectiveSenseRange = getEffectiveSenseRange(for: organism)
+        let maxSenseDistance = CGFloat(effectiveSenseRange)
 
         for foodItem in food where !foodItem.isClaimed {
             let dx = foodItem.position.x - organism.position.x
@@ -944,7 +1033,8 @@ class GameScene: SKScene {
 
         // Create sense range indicator (circle showing detection range)
         if showSenseRanges {
-            let senseRangeNode = SKShapeNode(circleOfRadius: CGFloat(organism.senseRange))
+            let effectiveSenseRange = getEffectiveSenseRange(for: organism)
+            let senseRangeNode = SKShapeNode(circleOfRadius: CGFloat(effectiveSenseRange))
             senseRangeNode.strokeColor = SKColor(red: 0.5, green: 0.8, blue: 1.0, alpha: 0.35)
             senseRangeNode.lineWidth = 1.5
             senseRangeNode.fillColor = .clear

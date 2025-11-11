@@ -106,6 +106,12 @@ struct GameConfiguration {
     var temperatureEnergyMultiplier: Double = 0.02  // Energy cost multiplier per degree outside comfort zone
     var temperatureDeathThreshold: Double = 25.0  // Distance from base temp that causes instant death
 
+    // MARK: - Day/Night Cycle
+    var dayNightCycleEnabled: Bool = true
+    var dayNightCycleDuration: Double = 60.0  // Seconds for full day/night cycle
+    var nightSenseRangeMultiplier: Double = 0.5  // Sense range reduced to 50% at night
+    var nightEnergyMultiplier: Double = 0.8  // Energy consumption reduced to 80% at night (rest period)
+
     // MARK: - Presets
     static let `default` = GameConfiguration()
 
