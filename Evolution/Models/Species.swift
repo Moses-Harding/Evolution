@@ -28,18 +28,62 @@ class Species: Identifiable {
         self.foundedOnDay = foundedOnDay
     }
 
-    // Generate a color for a new species based on a seed
+    // Palette of highly distinct colors for easy species identification
+    static let distinctColors: [SKColor] = [
+        SKColor(red: 1.0, green: 0.0, blue: 0.0, alpha: 1.0),      // Red
+        SKColor(red: 0.0, green: 0.5, blue: 1.0, alpha: 1.0),      // Blue
+        SKColor(red: 0.2, green: 0.8, blue: 0.2, alpha: 1.0),      // Green
+        SKColor(red: 1.0, green: 0.6, blue: 0.0, alpha: 1.0),      // Orange
+        SKColor(red: 0.6, green: 0.2, blue: 0.8, alpha: 1.0),      // Purple
+        SKColor(red: 1.0, green: 1.0, blue: 0.0, alpha: 1.0),      // Yellow
+        SKColor(red: 1.0, green: 0.0, blue: 0.5, alpha: 1.0),      // Pink
+        SKColor(red: 0.0, green: 0.8, blue: 0.8, alpha: 1.0),      // Cyan
+        SKColor(red: 0.5, green: 0.0, blue: 0.0, alpha: 1.0),      // Maroon
+        SKColor(red: 0.0, green: 0.3, blue: 0.6, alpha: 1.0),      // Navy
+        SKColor(red: 0.5, green: 0.5, blue: 0.0, alpha: 1.0),      // Olive
+        SKColor(red: 0.8, green: 0.4, blue: 0.7, alpha: 1.0),      // Magenta
+        SKColor(red: 0.4, green: 0.8, blue: 0.4, alpha: 1.0),      // Lime
+        SKColor(red: 1.0, green: 0.5, blue: 0.3, alpha: 1.0),      // Coral
+        SKColor(red: 0.3, green: 0.6, blue: 0.9, alpha: 1.0),      // Sky Blue
+        SKColor(red: 0.9, green: 0.3, blue: 0.3, alpha: 1.0),      // Salmon
+        SKColor(red: 0.5, green: 0.0, blue: 0.5, alpha: 1.0),      // Purple Dark
+        SKColor(red: 0.0, green: 0.6, blue: 0.5, alpha: 1.0),      // Teal
+        SKColor(red: 0.8, green: 0.8, blue: 0.2, alpha: 1.0),      // Gold
+        SKColor(red: 0.9, green: 0.5, blue: 0.8, alpha: 1.0),      // Pink Light
+        SKColor(red: 0.3, green: 0.3, blue: 0.8, alpha: 1.0),      // Indigo
+        SKColor(red: 0.7, green: 0.3, blue: 0.0, alpha: 1.0),      // Brown
+        SKColor(red: 0.0, green: 0.7, blue: 0.3, alpha: 1.0),      // Emerald
+        SKColor(red: 0.8, green: 0.0, blue: 0.4, alpha: 1.0),      // Crimson
+    ]
+
+    // Track which colors have been used
+    static var usedColorIndices: Set<Int> = []
+    static var colorCounter: Int = 0
+
+    // Generate a color for a new species with maximum visual distinction
     static func generateColor(for speciesId: UUID) -> SKColor {
-        // Use UUID bytes to generate consistent but varied colors
-        let uuidString = speciesId.uuidString
-        let hash = abs(uuidString.hashValue)
+        // If we've used all colors, start over with variations
+        if usedColorIndices.count >= distinctColors.count {
+            usedColorIndices.removeAll()
+            colorCounter = 0
+        }
 
-        // Generate hue, saturation, brightness
-        let hue = Double(hash % 360) / 360.0
-        let saturation = Double((hash / 360) % 40 + 60) / 100.0  // 0.6-1.0
-        let brightness = Double((hash / 14400) % 30 + 70) / 100.0  // 0.7-1.0
+        // Find the next unused color
+        var colorIndex = colorCounter % distinctColors.count
+        while usedColorIndices.contains(colorIndex) {
+            colorIndex = (colorIndex + 1) % distinctColors.count
+        }
 
-        return SKColor(hue: CGFloat(hue), saturation: CGFloat(saturation), brightness: CGFloat(brightness), alpha: 1.0)
+        usedColorIndices.insert(colorIndex)
+        colorCounter += 1
+
+        return distinctColors[colorIndex]
+    }
+
+    // Reset color tracking (useful when simulation restarts)
+    static func resetColorTracking() {
+        usedColorIndices.removeAll()
+        colorCounter = 0
     }
 
     // Generate a name for a species based on characteristics
