@@ -26,6 +26,7 @@ class GameScene: SKScene {
     var showSenseRanges: Bool = true  // Toggle for sense range visualization
     var showTrails: Bool = true  // Toggle for movement trails
     private let maxTrailLength: Int = 20  // Maximum trail segments per organism
+    var showEliteHighlights: Bool = true  // Toggle for elite organism highlighting
 
     // Food distribution patterns
     enum FoodPattern {
@@ -644,6 +645,11 @@ class GameScene: SKScene {
             statistics.averageSize = sizes.reduce(0.0, +) / Double(sizes.count)
             statistics.minSize = sizes.min() ?? 0.0
             statistics.maxSize = sizes.max() ?? 0.0
+
+            // Update elite organism highlighting
+            if showEliteHighlights {
+                updateEliteOrganisms()
+            }
         }
 
         statistics.organisms = organisms.map { organism in
@@ -671,6 +677,93 @@ class GameScene: SKScene {
 
         // Publish update
         statisticsPublisher.send(statistics)
+    }
+
+    private func updateEliteOrganisms() {
+        // Calculate fitness score for each organism
+        let organismsWithFitness = organisms.map { organism -> (organism: Organism, fitness: Double) in
+            let fitness = calculateFitness(for: organism)
+            return (organism, fitness)
+        }
+
+        // Sort by fitness and identify top 20%
+        let sorted = organismsWithFitness.sorted { $0.fitness > $1.fitness }
+        let eliteCount = max(1, sorted.count / 5)  // Top 20%
+        let elites = Set(sorted.prefix(eliteCount).map { $0.organism.id })
+
+        // Update visual highlighting
+        for organism in organisms {
+            if let node = organismNodes[organism.id] {
+                if elites.contains(organism.id) {
+                    // Elite organism - add golden glow
+                    node.strokeColor = .yellow
+                    node.lineWidth = 2
+                    node.glowWidth = 10
+
+                    // Add subtle pulsing animation if not already present
+                    if node.action(forKey: "elitePulse") == nil {
+                        let scaleUp = SKAction.scale(to: 1.1, duration: 0.5)
+                        let scaleDown = SKAction.scale(to: 1.0, duration: 0.5)
+                        let pulse = SKAction.sequence([scaleUp, scaleDown])
+                        let forever = SKAction.repeatForever(pulse)
+                        node.run(forever, withKey: "elitePulse")
+                    }
+                } else {
+                    // Regular organism - remove highlighting
+                    if node.action(forKey: "elitePulse") != nil {
+                        node.removeAction(forKey: "elitePulse")
+                        node.setScale(1.0)
+                    }
+                    node.strokeColor = .clear
+                    node.lineWidth = 0
+                    node.glowWidth = 0
+                }
+            }
+        }
+    }
+
+    private func calculateFitness(for organism: Organism) -> Double {
+        // Multi-factor fitness calculation based on current environment
+        var fitness = 0.0
+
+        // Speed contribution (normalized)
+        let speedRatio = Double(organism.speed - configuration.minSpeed) / Double(configuration.maxSpeed - configuration.minSpeed)
+
+        // Sense range contribution (normalized)
+        let senseRatio = Double(organism.senseRange - configuration.minSenseRange) / Double(configuration.maxSenseRange - configuration.minSenseRange)
+
+        // Size contribution (normalized)
+        let sizeRatio = (organism.size - configuration.minSize) / (configuration.maxSize - configuration.minSize)
+
+        // Adjust weights based on current food pattern
+        switch currentFoodPattern {
+        case .random:
+            // Balanced traits are best
+            fitness = speedRatio * 0.4 + senseRatio * 0.3 + (1.0 - abs(sizeRatio - 0.5) * 2) * 0.3
+
+        case .clustered:
+            // Size and sense range matter most
+            fitness = speedRatio * 0.2 + senseRatio * 0.3 + sizeRatio * 0.5
+
+        case .scattered:
+            // Speed and sense range, smaller size
+            fitness = speedRatio * 0.5 + senseRatio * 0.4 + (1.0 - sizeRatio) * 0.1
+
+        case .ring:
+            // Sense range is king
+            fitness = speedRatio * 0.2 + senseRatio * 0.6 + (1.0 - abs(sizeRatio - 0.5) * 2) * 0.2
+        }
+
+        // Bonus for high generation (successful lineage)
+        let generationBonus = min(0.2, Double(organism.generation) * 0.01)
+        fitness += generationBonus
+
+        // Bonus if organism has eaten today (immediate success)
+        if organism.hasFoodToday {
+            fitness *= 1.2
+        }
+
+        return fitness
     }
 
     // MARK: - Animations
