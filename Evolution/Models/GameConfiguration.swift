@@ -13,6 +13,7 @@ struct GameConfiguration {
     var initialSpeed: Int = 10
     var initialSenseRange: Int = 150
     var initialSize: Double = 1.0
+    var initialFertility: Double = 1.0
 
     // MARK: - Evolution Parameters
     var minSpeed: Int = 1
@@ -26,6 +27,10 @@ struct GameConfiguration {
     var minSize: Double = 0.5
     var maxSize: Double = 2.0
     var sizeMutationRange: Double = 0.15  // Size can mutate by ±sizeMutationRange
+
+    var minFertility: Double = 0.5
+    var maxFertility: Double = 1.5
+    var fertilityMutationRange: Double = 0.1  // Fertility can mutate by ±fertilityMutationRange
 
     // MARK: - Food Settings
     var foodPerDay: Int = 5

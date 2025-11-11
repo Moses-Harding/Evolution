@@ -2,12 +2,13 @@
 
 This document contains ideas for additional evolutionary traits that could make the simulation more interesting and complex.
 
-## 🎮 Current Simulation Features (Phase 2 Complete!)
+## 🎮 Current Simulation Features (Phase 3 Complete!)
 
 ### Core Evolutionary Traits
 - **Speed** (1-30): Movement rate with color coding (blue=slow, red=fast)
 - **Sense Range** (50-400): Detection radius with visual indicators
 - **Size** (0.5-2.0): Affects collision radius and movement speed (50% penalty at max size)
+- **Fertility** (0.5-1.5): Reproduction probability modifier (1.0 = base 70% rate, adjustable ±50%)
 
 ### Visual Enhancements
 - **Sense Range Circles**: Semi-transparent visualization of detection zones
@@ -95,15 +96,22 @@ This document contains ideas for additional evolutionary traits that could make 
 - **Concerns**: Might be too abstract to visualize clearly
 
 ### 4. Reproduction Rate / Fertility
-- **Status**: 💡 Idea
-- **What it does**: Probability of reproduction when fed
+- **Status**: ✅ Implemented
+- **What it does**: Modifies probability of reproduction when fed
+- **Range**: 0.5-1.5 (multiplier on base 70% rate)
+- **Mutation**: ±0.1 per generation
 - **Tradeoffs**:
-  - High fertility = more offspring but potentially overpopulation
-  - Low fertility = slower growth but less competition
-  - r/K selection theory dynamics
+  - High fertility (1.5) = 95% reproduction chance (capped), more offspring, faster population growth
+  - Normal fertility (1.0) = 70% reproduction chance (base rate)
+  - Low fertility (0.5) = 35% reproduction chance, slower growth, r-selection strategy
+  - Creates r/K selection dynamics: high fertility thrives in clustered resources, moderate fertility better in scattered environments
+- **Fitness weights by pattern**:
+  - Random: 15% (balanced approach)
+  - Clustered: 20% (helps dominate resource clusters)
+  - Scattered: 10% (less important when spread out)
+  - Ring: 15% (moderately important)
 - **Implementation complexity**: Low
-- **Gameplay impact**: Medium
-- **Note**: Currently all organisms use config.reproductionProbability (70%)
+- **Gameplay impact**: Medium-High - Creates reproduction strategy diversity
 
 ### 5. Lifespan / Age
 - **Status**: 💡 Idea
@@ -172,16 +180,20 @@ Some traits work particularly well together:
 - Population health indicators
 - Elite organism highlighting with fitness scoring
 
-### Phase 3 (Current): 🎯 Next Up
-- Energy Efficiency (adds survival complexity, pairs well with size)
-- Reproduction Rate / Fertility (easy addition, creates r/K selection dynamics)
+### Phase 3: ✅ Complete
+- Fertility / Reproduction Rate (creates r/K selection dynamics)
+- Environment-adaptive fitness scoring with fertility integration
 
-### Phase 4 (Advanced):
+### Phase 4 (Current): 🎯 Next Up
+- Energy Efficiency (adds survival complexity, pairs well with size and fertility)
+- Visual fertility indicators (color coding or glow effects)
+
+### Phase 5 (Advanced):
 - Memory/Intelligence
 - Lifespan
 - Multi-trait color visualization
 
-### Phase 5 (Complex Systems):
+### Phase 6 (Complex Systems):
 - Social Behavior
 - Aggression
 - Predator-prey traits

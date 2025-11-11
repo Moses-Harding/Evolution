@@ -79,6 +79,7 @@ class GameScene: SKScene {
                 speed: configuration.initialSpeed,
                 senseRange: configuration.initialSenseRange,
                 size: configuration.initialSize,
+                fertility: configuration.initialFertility,
                 position: CGPoint(x: randomX, y: randomY),
                 generation: 0,
                 configuration: configuration
@@ -397,7 +398,7 @@ class GameScene: SKScene {
         // Handle reproduction for all organisms that ate today
         let fedOrganisms = organisms.filter { $0.hasFoodToday }
         for organism in fedOrganisms {
-            if Double.random(in: 0...1) < configuration.reproductionProbability {
+            if Double.random(in: 0...1) < organism.effectiveReproductionProbability {
                 let angle = Double.random(in: 0...(2 * .pi))
                 let offsetX = cos(angle) * configuration.spawnDistance
                 let offsetY = sin(angle) * configuration.spawnDistance
@@ -630,6 +631,9 @@ class GameScene: SKScene {
             statistics.averageSize = 0.0
             statistics.minSize = 0.0
             statistics.maxSize = 0.0
+            statistics.averageFertility = 0.0
+            statistics.minFertility = 0.0
+            statistics.maxFertility = 0.0
         } else {
             let speeds = organisms.map { $0.speed }
             statistics.averageSpeed = Double(speeds.reduce(0, +)) / Double(speeds.count)
@@ -646,6 +650,11 @@ class GameScene: SKScene {
             statistics.minSize = sizes.min() ?? 0.0
             statistics.maxSize = sizes.max() ?? 0.0
 
+            let fertilities = organisms.map { $0.fertility }
+            statistics.averageFertility = fertilities.reduce(0.0, +) / Double(fertilities.count)
+            statistics.minFertility = fertilities.min() ?? 0.0
+            statistics.maxFertility = fertilities.max() ?? 0.0
+
             // Update elite organism highlighting
             if showEliteHighlights {
                 updateEliteOrganisms()
@@ -658,6 +667,7 @@ class GameScene: SKScene {
                 speed: organism.speed,
                 senseRange: organism.senseRange,
                 size: organism.size,
+                fertility: organism.fertility,
                 generation: organism.generation,
                 hasFoodToday: organism.hasFoodToday
             )
@@ -735,23 +745,26 @@ class GameScene: SKScene {
         // Size contribution (normalized)
         let sizeRatio = (organism.size - configuration.minSize) / (configuration.maxSize - configuration.minSize)
 
+        // Fertility contribution (normalized)
+        let fertilityRatio = (organism.fertility - configuration.minFertility) / (configuration.maxFertility - configuration.minFertility)
+
         // Adjust weights based on current food pattern
         switch currentFoodPattern {
         case .random:
-            // Balanced traits are best
-            fitness = speedRatio * 0.4 + senseRatio * 0.3 + (1.0 - abs(sizeRatio - 0.5) * 2) * 0.3
+            // Balanced traits are best, fertility moderately important
+            fitness = speedRatio * 0.35 + senseRatio * 0.25 + (1.0 - abs(sizeRatio - 0.5) * 2) * 0.25 + fertilityRatio * 0.15
 
         case .clustered:
-            // Size and sense range matter most
-            fitness = speedRatio * 0.2 + senseRatio * 0.3 + sizeRatio * 0.5
+            // Size matters most, fertility helps dominate clusters
+            fitness = speedRatio * 0.15 + senseRatio * 0.25 + sizeRatio * 0.4 + fertilityRatio * 0.2
 
         case .scattered:
-            // Speed and sense range, smaller size
-            fitness = speedRatio * 0.5 + senseRatio * 0.4 + (1.0 - sizeRatio) * 0.1
+            // Speed and sense range, fertility less important when spread out
+            fitness = speedRatio * 0.45 + senseRatio * 0.35 + (1.0 - sizeRatio) * 0.1 + fertilityRatio * 0.1
 
         case .ring:
-            // Sense range is king
-            fitness = speedRatio * 0.2 + senseRatio * 0.6 + (1.0 - abs(sizeRatio - 0.5) * 2) * 0.2
+            // Sense range is king, fertility moderately important
+            fitness = speedRatio * 0.15 + senseRatio * 0.5 + (1.0 - abs(sizeRatio - 0.5) * 2) * 0.2 + fertilityRatio * 0.15
         }
 
         // Bonus for high generation (successful lineage)
@@ -1463,6 +1476,9 @@ struct GameStatistics {
     var averageSize: Double = 0.0
     var minSize: Double = 0.0
     var maxSize: Double = 0.0
+    var averageFertility: Double = 0.0
+    var minFertility: Double = 0.0
+    var maxFertility: Double = 0.0
     var births: Int = 0
     var deaths: Int = 0
     var organisms: [OrganismInfo] = []
@@ -1474,6 +1490,7 @@ struct OrganismInfo: Identifiable {
     let speed: Int
     let senseRange: Int
     let size: Double
+    let fertility: Double
     let generation: Int
     let hasFoodToday: Bool
 }

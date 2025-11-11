@@ -13,18 +13,20 @@ class Organism: Identifiable, Equatable {
     var speed: Int
     var senseRange: Int
     var size: Double
+    var fertility: Double  // Reproduction probability modifier (0.5-1.5, where 1.0 = base rate)
     var position: CGPoint
     var hasFoodToday: Bool
     var targetFood: Food?
     var generation: Int
     let configuration: GameConfiguration
 
-    init(id: UUID = UUID(), speed: Int, senseRange: Int, size: Double, position: CGPoint, generation: Int = 0, configuration: GameConfiguration = .default) {
+    init(id: UUID = UUID(), speed: Int, senseRange: Int, size: Double, fertility: Double, position: CGPoint, generation: Int = 0, configuration: GameConfiguration = .default) {
         self.id = id
         self.configuration = configuration
         self.speed = max(configuration.minSpeed, min(configuration.maxSpeed, speed))
         self.senseRange = max(configuration.minSenseRange, min(configuration.maxSenseRange, senseRange))
         self.size = max(configuration.minSize, min(configuration.maxSize, size))
+        self.fertility = max(configuration.minFertility, min(configuration.maxFertility, fertility))
         self.position = position
         self.hasFoodToday = false
         self.targetFood = nil
@@ -42,7 +44,15 @@ class Organism: Identifiable, Equatable {
         let sizeMutation = Double.random(in: -configuration.sizeMutationRange...configuration.sizeMutationRange)
         let childSize = max(configuration.minSize, min(configuration.maxSize, size + sizeMutation))
 
-        return Organism(speed: childSpeed, senseRange: childSenseRange, size: childSize, position: newPosition, generation: generation + 1, configuration: configuration)
+        let fertilityMutation = Double.random(in: -configuration.fertilityMutationRange...configuration.fertilityMutationRange)
+        let childFertility = max(configuration.minFertility, min(configuration.maxFertility, fertility + fertilityMutation))
+
+        return Organism(speed: childSpeed, senseRange: childSenseRange, size: childSize, fertility: childFertility, position: newPosition, generation: generation + 1, configuration: configuration)
+    }
+
+    // Effective reproduction probability (fertility modifies base rate)
+    var effectiveReproductionProbability: Double {
+        return min(0.95, max(0.1, configuration.reproductionProbability * fertility))
     }
 
     // Effective speed accounting for size penalty
