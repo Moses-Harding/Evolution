@@ -813,6 +813,58 @@ class GameScene: SKScene {
         return species[organism.speciesId]?.color ?? Species.generateColor(for: organism.speciesId)
     }
 
+    private func getSpeedBasedColor(ratio: Double) -> SKColor {
+        // Blue (slow) → Cyan → Green → Yellow → Orange → Red (fast)
+        let clampedRatio = max(0, min(1, ratio))
+
+        if clampedRatio < 0.2 {
+            // Blue to Cyan
+            let t = clampedRatio / 0.2
+            return SKColor(
+                red: 0,
+                green: CGFloat(t * 0.8),
+                blue: 1.0,
+                alpha: 0.4
+            )
+        } else if clampedRatio < 0.4 {
+            // Cyan to Green
+            let t = (clampedRatio - 0.2) / 0.2
+            return SKColor(
+                red: 0,
+                green: CGFloat(0.8 + t * 0.2),
+                blue: CGFloat(1.0 - t),
+                alpha: 0.4
+            )
+        } else if clampedRatio < 0.6 {
+            // Green to Yellow
+            let t = (clampedRatio - 0.4) / 0.2
+            return SKColor(
+                red: CGFloat(t),
+                green: 1.0,
+                blue: 0,
+                alpha: 0.4
+            )
+        } else if clampedRatio < 0.8 {
+            // Yellow to Orange
+            let t = (clampedRatio - 0.6) / 0.2
+            return SKColor(
+                red: 1.0,
+                green: CGFloat(1.0 - t * 0.4),
+                blue: 0,
+                alpha: 0.4
+            )
+        } else {
+            // Orange to Red
+            let t = (clampedRatio - 0.8) / 0.2
+            return SKColor(
+                red: 1.0,
+                green: CGFloat(0.6 - t * 0.6),
+                blue: 0,
+                alpha: 0.4
+            )
+        }
+    }
+
     private func applyAgeDarkening(color: SKColor, organism: Organism) -> SKColor {
         // Calculate age ratio (0.0 = newborn, 1.0 = max age)
         let ageRatio = Double(organism.age) / Double(organism.maxAge)
@@ -1216,8 +1268,11 @@ class GameScene: SKScene {
         path.addLine(to: to)
 
         let trail = SKShapeNode(path: path)
-        let color = organism.color
-        trail.strokeColor = SKColor(red: CGFloat(color.red), green: CGFloat(color.green), blue: CGFloat(color.blue), alpha: 0.3)
+
+        // Speed-based trail color: blue (slow) to red (fast)
+        let speedRatio = Double(organism.speed - 1) / 29.0  // Normalize to 0-1 (speed range 1-30)
+        let trailColor = getSpeedBasedColor(ratio: speedRatio)
+        trail.strokeColor = trailColor
         trail.lineWidth = 1.5
         trail.zPosition = 0.5
 
