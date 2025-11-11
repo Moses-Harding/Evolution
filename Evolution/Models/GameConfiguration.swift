@@ -14,6 +14,12 @@ struct GameConfiguration {
     var initialSenseRange: Int = 150
     var initialSize: Double = 1.0
     var initialFertility: Double = 1.0
+    var initialEnergy: Double = 100.0
+    var initialEnergyEfficiency: Double = 1.0
+    var initialMaxAge: Int = 200  // Days
+    var initialAggression: Double = 0.5
+    var initialDefense: Double = 0.5
+    var initialMetabolism: Double = 1.0
 
     // MARK: - Evolution Parameters
     var minSpeed: Int = 1
@@ -31,6 +37,26 @@ struct GameConfiguration {
     var minFertility: Double = 0.5
     var maxFertility: Double = 1.5
     var fertilityMutationRange: Double = 0.1  // Fertility can mutate by ±fertilityMutationRange
+
+    var minEnergyEfficiency: Double = 0.5
+    var maxEnergyEfficiency: Double = 1.5
+    var energyEfficiencyMutationRange: Double = 0.1
+
+    var minMaxAge: Int = 100
+    var maxMaxAge: Int = 400
+    var maxAgeMutationRange: Int = 20
+
+    var minAggression: Double = 0.0
+    var maxAggression: Double = 1.0
+    var aggressionMutationRange: Double = 0.1
+
+    var minDefense: Double = 0.0
+    var maxDefense: Double = 1.0
+    var defenseMutationRange: Double = 0.1
+
+    var minMetabolism: Double = 0.5
+    var maxMetabolism: Double = 1.5
+    var metabolismMutationRange: Double = 0.1
 
     // MARK: - Food Settings
     var foodPerDay: Int = 5
@@ -50,6 +76,17 @@ struct GameConfiguration {
 
     // MARK: - Size Effects
     var sizeSpeedPenalty: Double = 0.5  // How much size reduces speed (0.0-1.0)
+
+    // MARK: - Energy System
+    var maxEnergy: Double = 100.0
+    var energyCostPerMove: Double = 0.05  // Energy cost per unit of distance
+    var energyGainFromFood: Double = 80.0  // Energy restored when eating
+    var starvationThreshold: Double = 0.0  // Die if energy drops to this
+    var metabolismEnergyCost: Double = 0.1  // Base energy cost per day cycle
+
+    // MARK: - Combat System
+    var foodContestRange: Double = 15.0  // Distance at which organisms can contest food
+    var aggressionSuccessBase: Double = 0.5  // Base chance to win food contest
 
     // MARK: - Presets
     static let `default` = GameConfiguration()

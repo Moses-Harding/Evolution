@@ -204,15 +204,48 @@ struct OrganismStatsModal: View {
 
                 Divider()
 
-                // Stats Grid
-                VStack(alignment: .leading, spacing: 12) {
+                // Scrollable Stats Grid
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 12) {
                     StatRow(label: "ID", value: String(organism.id.uuidString.prefix(8)))
                     StatRow(label: "Generation", value: "\(organism.generation)")
+                    StatRow(label: "Age", value: "\(organism.age)/\(organism.maxAge) days")
+                        .foregroundColor(organism.age > organism.maxAge * 3/4 ? .orange : .primary)
+
+                    Divider()
+
+                    // Movement
+                    Text("Movement").font(.headline).foregroundColor(.cyan)
                     StatRow(label: "Speed", value: "\(organism.speed)")
                     StatRow(label: "Effective Speed", value: String(format: "%.1f", organism.effectiveSpeed))
                     StatRow(label: "Sense Range", value: "\(organism.senseRange)")
+
+                    Divider()
+
+                    // Energy
+                    Text("Energy").font(.headline).foregroundColor(.yellow)
+                    StatRow(label: "Current Energy", value: String(format: "%.1f/100", organism.energy))
+                        .foregroundColor(organism.energy < 30 ? .red : organism.energy < 60 ? .orange : .green)
+                    StatRow(label: "Energy Efficiency", value: String(format: "%.2fx", organism.energyEfficiency))
+                    StatRow(label: "Metabolism", value: String(format: "%.2fx", organism.metabolism))
+
+                    Divider()
+
+                    // Combat & Survival
+                    Text("Combat").font(.headline).foregroundColor(.red)
+                    StatRow(label: "Aggression", value: String(format: "%.0f%%", organism.aggression * 100))
+                    StatRow(label: "Defense", value: String(format: "%.0f%%", organism.defense * 100))
+
+                    Divider()
+
+                    // Physical
+                    Text("Physical").font(.headline).foregroundColor(.purple)
                     StatRow(label: "Size", value: String(format: "%.2f", organism.size))
                     StatRow(label: "Fertility", value: String(format: "%.1f%%", organism.fertility * 100))
+
+                    Divider()
+
+                    // Status
                     StatRow(label: "Has Food Today", value: organism.hasFoodToday ? "Yes ✓" : "No ✗")
                         .foregroundColor(organism.hasFoodToday ? .green : .red)
 
@@ -243,11 +276,10 @@ struct OrganismStatsModal: View {
                             )
                     }
                 }
-
-                Spacer()
+                }
             }
             .padding()
-            .frame(maxWidth: 320)
+            .frame(maxWidth: 380, maxHeight: 600)
             .background(
                 RoundedRectangle(cornerRadius: 20)
                     .fill(.ultraThinMaterial)

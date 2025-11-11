@@ -236,6 +236,11 @@ class GameScene: SKScene {
                 senseRange: configuration.initialSenseRange,
                 size: configuration.initialSize,
                 fertility: configuration.initialFertility,
+                energyEfficiency: configuration.initialEnergyEfficiency,
+                maxAge: configuration.initialMaxAge,
+                aggression: configuration.initialAggression,
+                defense: configuration.initialDefense,
+                metabolism: configuration.initialMetabolism,
                 position: CGPoint(x: randomX, y: randomY),
                 generation: 0,
                 configuration: configuration
@@ -457,17 +462,19 @@ class GameScene: SKScene {
             // Move towards target food
             if let target = organism.targetFood, !organism.hasFoodToday {
                 let oldPosition = organism.position
-                var newPosition = organism.move(towards: target.position, deltaTime: deltaTime)
+                let (var newPosition, energyCost) = organism.move(towards: target.position, deltaTime: deltaTime)
 
                 // Clamp to playable bounds
                 newPosition.x = max(playableMinX, min(playableMaxX, newPosition.x))
                 newPosition.y = max(playableMinY, min(playableMaxY, newPosition.y))
 
                 // Check for obstacle collisions and adjust position if needed
+                var collided = false
                 for obstacle in obstacles {
                     if obstacle.collidesWith(organismPosition: newPosition, organismRadius: CGFloat(organism.effectiveRadius)) {
                         // Collision detected - revert to old position
                         newPosition = oldPosition
+                        collided = true
                         // Clear target to find a new path next frame
                         organism.targetFood = nil
                         break
@@ -475,6 +482,11 @@ class GameScene: SKScene {
                 }
 
                 organism.position = newPosition
+
+                // Consume energy only if actually moved
+                if !collided {
+                    organism.consumeEnergy(energyCost)
+                }
 
                 // Add trail segment if position changed significantly
                 if showTrails {
@@ -565,6 +577,9 @@ class GameScene: SKScene {
                     organism.hasFoodToday = true
                     target.isClaimed = true
 
+                    // Restore energy from eating
+                    organism.gainEnergy(configuration.energyGainFromFood)
+
                     // Update visual feedback with animation
                     if let foodNode = foodNodes[target.id] {
                         // Animate food being consumed
@@ -622,6 +637,12 @@ class GameScene: SKScene {
         var deaths = 0
         corpsePositions.removeAll()  // Clear previous corpse positions
 
+        // Age all organisms and apply metabolism cost
+        for organism in organisms {
+            organism.incrementAge()
+            organism.consumeEnergy(configuration.metabolismEnergyCost)
+        }
+
         // Handle reproduction for all organisms that ate today
         let fedOrganisms = organisms.filter { $0.hasFoodToday }
         for organism in fedOrganisms {
@@ -650,15 +671,26 @@ class GameScene: SKScene {
             }
         }
 
-        // Handle deaths (organisms that didn't eat)
+        // Handle deaths (organisms that didn't eat, starved, or died of old age)
         let survivors = organisms.filter { organism in
-            if organism.hasFoodToday {
-                return true
-            } else {
+            if organism.isDead || !organism.hasFoodToday {
                 deaths += 1
                 corpsePositions.append(organism.position)  // Store corpse position
-                removeOrganism(organism, animated: true)
+
+                // Different death animations based on cause
+                if organism.isStarving {
+                    // Starvation death - fade out slowly
+                    removeOrganism(organism, animated: true)
+                } else if organism.age >= organism.maxAge {
+                    // Old age death - peaceful fade
+                    removeOrganism(organism, animated: true)
+                } else {
+                    // Starvation (didn't eat)
+                    removeOrganism(organism, animated: true)
+                }
                 return false
+            } else {
+                return true
             }
         }
 
@@ -945,6 +977,31 @@ class GameScene: SKScene {
             statistics.minFertility = fertilities.min() ?? 0.0
             statistics.maxFertility = fertilities.max() ?? 0.0
 
+            let energies = organisms.map { $0.energy }
+            statistics.averageEnergy = energies.reduce(0.0, +) / Double(energies.count)
+            statistics.minEnergy = energies.min() ?? 0.0
+            statistics.maxEnergy = energies.max() ?? 0.0
+
+            let ages = organisms.map { $0.age }
+            statistics.averageAge = Double(ages.reduce(0, +)) / Double(ages.count)
+            statistics.minAge = ages.min() ?? 0
+            statistics.maxAge = ages.max() ?? 0
+
+            let efficiencies = organisms.map { $0.energyEfficiency }
+            statistics.averageEnergyEfficiency = efficiencies.reduce(0.0, +) / Double(efficiencies.count)
+
+            let maxAges = organisms.map { $0.maxAge }
+            statistics.averageMaxAge = Double(maxAges.reduce(0, +)) / Double(maxAges.count)
+
+            let aggressions = organisms.map { $0.aggression }
+            statistics.averageAggression = aggressions.reduce(0.0, +) / Double(aggressions.count)
+
+            let defenses = organisms.map { $0.defense }
+            statistics.averageDefense = defenses.reduce(0.0, +) / Double(defenses.count)
+
+            let metabolisms = organisms.map { $0.metabolism }
+            statistics.averageMetabolism = metabolisms.reduce(0.0, +) / Double(metabolisms.count)
+
             // Update elite organism highlighting
             if showEliteHighlights {
                 updateEliteOrganisms()
@@ -958,6 +1015,13 @@ class GameScene: SKScene {
                 senseRange: organism.senseRange,
                 size: organism.size,
                 fertility: organism.fertility,
+                energyEfficiency: organism.energyEfficiency,
+                maxAge: organism.maxAge,
+                aggression: organism.aggression,
+                defense: organism.defense,
+                metabolism: organism.metabolism,
+                energy: organism.energy,
+                age: organism.age,
                 generation: organism.generation,
                 hasFoodToday: organism.hasFoodToday
             )
@@ -1860,6 +1924,17 @@ struct GameStatistics {
     var averageFertility: Double = 0.0
     var minFertility: Double = 0.0
     var maxFertility: Double = 0.0
+    var averageEnergy: Double = 0.0
+    var minEnergy: Double = 0.0
+    var maxEnergy: Double = 0.0
+    var averageAge: Double = 0.0
+    var minAge: Int = 0
+    var maxAge: Int = 0
+    var averageEnergyEfficiency: Double = 0.0
+    var averageMaxAge: Double = 0.0
+    var averageAggression: Double = 0.0
+    var averageDefense: Double = 0.0
+    var averageMetabolism: Double = 0.0
     var births: Int = 0
     var deaths: Int = 0
     var organisms: [OrganismInfo] = []
@@ -1872,6 +1947,13 @@ struct OrganismInfo: Identifiable {
     let senseRange: Int
     let size: Double
     let fertility: Double
+    let energyEfficiency: Double
+    let maxAge: Int
+    let aggression: Double
+    let defense: Double
+    let metabolism: Double
+    let energy: Double
+    let age: Int
     let generation: Int
     let hasFoodToday: Bool
 }
